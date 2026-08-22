@@ -1,0 +1,26 @@
+{
+  "sourceLanguage" : "en",
+  "strings" : {
+    "Search GitHub" : {},
+    "Find repositories by name, topic, or language." : {},
+    "Search GitHub repositories" : {},
+    "Searching…" : {},
+    "Something went wrong" : {},
+    "Retry" : {},
+    "RepoScout" : {},
+    "Search" : {},
+    "Favorites" : {},
+    "No favorites yet" : {},
+    "Repositories you favorite will appear here." : {},
+    "About" : {},
+    "Stats" : {},
+    "Stars" : {},
+    "Forks" : {},
+    "Language" : {},
+    "Owner" : {},
+    "View on GitHub" : {},
+    "Add to favorites" : {},
+    "Remove from favorites" : {}
+  },
+  "version" : "1.0"
+}
