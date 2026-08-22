@@ -38,12 +38,13 @@ repo details, and save favorites locally. Structure:
 
 **Pattern: `@Observable` MVVM with protocol-based dependency injection.**
 
-- One `@Observable` view model per screen where there is real logic
-  (`SearchViewModel`, `FavoritesViewModel`). The detail screen has no async
-  logic of its own, so it deliberately has **no view model** — it reads its
-  `Repo` value and talks to the favorites repository directly. This contrast
-  (view model only when it earns its keep) is called out in comments. View
-  models are `@MainActor`.
+- An `@Observable` view model only where there is real logic: `SearchViewModel`
+  owns the search pipeline. The detail and favorites screens deliberately have
+  **no view model** — detail reads its `Repo` value and talks to the favorites
+  repository directly; favorites reads live data via `@Query` and mutates via
+  the repository. This contrast (view model only when it earns its keep) is
+  called out in comments. View models run on the main actor (the project uses
+  Xcode 26's default-`MainActor` isolation).
 - **UI state modeled as an enum** — `LoadState` with `idle`, `loading`,
   `loaded([Repo])`, `failed(message)` cases so impossible states are
   unrepresentable. This is a headline lesson of the codebase.
@@ -52,8 +53,10 @@ repo details, and save favorites locally. Structure:
     GitHub's search JSON via `Codable` with `CodingKeys`.
   - `MockGitHubClient` — returns fixture data (or errors on demand). Used by
     unit tests, `#Preview`s, and UI tests.
-- **Composition root** in the `App` type: selects live vs mock based on a launch
-  argument (`-UITestMockNetwork`), injects services via the SwiftUI environment.
+- **Composition root** (`AppDependencies`, owned by the `App` type): selects
+  live vs mock client based on a launch argument (`-UITestMockNetwork`) and
+  constructor-injects it into view models. SwiftData flows through the SwiftUI
+  environment via `.modelContainer`.
 - **Persistence:** SwiftData. `FavoriteRepo` is an `@Model`; favorites tab uses
   `@Query`. A thin repository type wraps writes so logic is unit-testable with
   an in-memory `ModelContainer`. UI tests use an in-memory container via launch
