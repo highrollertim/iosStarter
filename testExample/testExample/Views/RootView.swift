@@ -10,7 +10,7 @@ struct RootView: View {
                 SearchView(viewModel: searchViewModel)
             }
             Tab("Favorites", systemImage: "star.fill") {
-                Text("Favorites coming in Task 9") // TODO(Task 9)
+                FavoritesView()
             }
         }
     }
