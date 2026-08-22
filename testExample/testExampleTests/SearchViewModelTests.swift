@@ -88,4 +88,31 @@ struct SearchViewModelTests {
         #expect(SearchViewModel.refreshedDescription(from: base, now: base.addingTimeInterval(42)) == "Updated 42s ago")
         #expect(SearchViewModel.refreshedDescription(from: nil, now: base) == nil)
     }
+
+    @Test("rapid typing coalesces into a single request for the final text")
+    func rapidTypingCoalesces() async throws {
+        let spy = SpyGitHubClient(result: .success(.fixture))
+        let viewModel = SearchViewModel(client: spy, debounceInterval: .milliseconds(50))
+
+        viewModel.searchText = "s"
+        viewModel.searchText = "sw"
+        viewModel.searchText = "swift"
+
+        try await poll(until: { viewModel.state == .loaded(.fixture) }, message: "state == .loaded")
+        #expect(await spy.queries == ["swift"])
+    }
+
+    @Test("unchanged text does not re-search (removeDuplicates)")
+    func unchangedTextDoesNotResearch() async throws {
+        let spy = SpyGitHubClient(result: .success(.fixture))
+        let viewModel = SearchViewModel(client: spy, debounceInterval: .milliseconds(50))
+
+        viewModel.searchText = "swift"
+        try await poll(until: { viewModel.state == .loaded(.fixture) }, message: "first load")
+
+        viewModel.searchText = "swift"
+        // Give the pipeline time to (wrongly) fire again before asserting.
+        try await Task.sleep(for: .milliseconds(200))
+        #expect(await spy.queries == ["swift"])
+    }
 }
