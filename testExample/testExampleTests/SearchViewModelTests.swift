@@ -44,6 +44,44 @@ struct SearchViewModelTests {
         #expect(await spy.queries.isEmpty)
     }
 
+    @Test("a cancelled search cannot clobber a newer search's result")
+    func supersededSearchCannotClobberNewerResult() async throws {
+        let staleResult: [Repo] = [
+            Repo(id: 2, fullName: "stale/repo", ownerLogin: "stale", summary: nil,
+                 stargazersCount: 0, forksCount: 0, language: nil,
+                 htmlURL: URL(string: "https://github.com/stale/repo")!)
+        ]
+        let freshResult: [Repo] = .fixture
+        let client = KeyedGatedGitHubClient(repos: ["first": staleResult, "second": freshResult])
+        let viewModel = SearchViewModel(client: client)
+
+        // Drives cancellation the way the production debounce sink does
+        // (`searchTask?.cancel()` followed by starting a Task for the
+        // latest query — see `SearchViewModel.init`'s `querySubject` sink).
+        // Exercised directly here, rather than through Combine's
+        // time-based debounce, so the test is deterministic.
+        let firstSearch = Task { await viewModel.search(matching: "first") }
+        try await poll(until: { await client.isPending("first") }, message: "\"first\" request in flight")
+        firstSearch.cancel()
+
+        // Arm "second" to resolve the instant its call arrives, then run it
+        // to completion — this is the search that should win.
+        await client.open("second")
+        let secondSearch = Task { await viewModel.search(matching: "second") }
+        await secondSearch.value
+
+        #expect(viewModel.state == .loaded(freshResult))
+
+        // Only now release the stale, already-cancelled first request.
+        // `search(matching:)`'s `Task.isCancelled` guard (checked right
+        // after the `try await` succeeds) must discard this late arrival
+        // rather than let it clobber the newer state.
+        await client.open("first")
+        await firstSearch.value
+
+        #expect(viewModel.state == .loaded(freshResult))
+    }
+
     @Test("refreshed description reports whole seconds")
     func refreshedDescription() {
         let base = Date(timeIntervalSinceReferenceDate: 1_000)

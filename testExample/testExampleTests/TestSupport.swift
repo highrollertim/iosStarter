@@ -41,6 +41,46 @@ actor GatedGitHubClient: GitHubClient {
     }
 }
 
+/// Gates calls by query key, and can be armed before a call arrives
+/// (`open(_:)` called first) or release one already in flight (`open(_:)`
+/// called after). Lets a test run two overlapping searches and control
+/// precisely which one resolves first — the shape needed to prove a
+/// superseded, still in-flight search cannot clobber a newer search's
+/// result once it's finally released.
+actor KeyedGatedGitHubClient: GitHubClient {
+    private var continuations: [String: CheckedContinuation<Void, Never>] = [:]
+    private var preOpened: Set<String> = []
+    private let repos: [String: [Repo]]
+
+    init(repos: [String: [Repo]]) {
+        self.repos = repos
+    }
+
+    func searchRepositories(matching query: String) async throws -> [Repo] {
+        if preOpened.remove(query) == nil {
+            await withCheckedContinuation { continuations[query] = $0 }
+        }
+        return repos[query] ?? []
+    }
+
+    /// Resumes the call for `query` if it's already suspended; otherwise
+    /// arms it to resolve immediately the moment it arrives.
+    func open(_ query: String) {
+        if let continuation = continuations.removeValue(forKey: query) {
+            continuation.resume()
+        } else {
+            preOpened.insert(query)
+        }
+    }
+
+    /// True once `searchRepositories(matching: query)` has suspended
+    /// waiting for `open(_:)` — lets a test wait for a call to be truly
+    /// in flight before proceeding, deterministically.
+    func isPending(_ query: String) -> Bool {
+        continuations[query] != nil
+    }
+}
+
 extension [Repo] {
     static let fixture: [Repo] = [
         Repo(id: 1, fullName: "apple/swift", ownerLogin: "apple",
@@ -61,6 +101,24 @@ func poll(
     let deadline = ContinuousClock.now.advanced(by: timeout)
     while ContinuousClock.now < deadline {
         if condition() { return }
+        try await Task.sleep(for: .milliseconds(10))
+    }
+    Issue.record("Timed out waiting for \(message())")
+}
+
+/// Same semantics as the synchronous overload above, for conditions that
+/// must themselves suspend (e.g. querying an actor). Kept as a distinct
+/// overload — rather than making the sync one `async` everywhere — so
+/// existing synchronous call sites stay exactly as simple as they were.
+@MainActor
+func poll(
+    until condition: () async -> Bool,
+    timeout: Duration = .seconds(2),
+    message: @autoclosure () -> String = "condition"
+) async throws {
+    let deadline = ContinuousClock.now.advanced(by: timeout)
+    while ContinuousClock.now < deadline {
+        if await condition() { return }
         try await Task.sleep(for: .milliseconds(10))
     }
     Issue.record("Timed out waiting for \(message())")
