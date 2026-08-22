@@ -1,0 +1,35 @@
+import XCTest
+
+/// Screen object for the Search tab.
+///
+/// Tests never touch raw queries — they speak in user intentions
+/// (`search(for:)`) and observable facts (`row(for:)`). When the UI changes,
+/// this file changes; the scenarios don't.
+struct SearchScreen {
+    let app: XCUIApplication
+
+    var searchField: XCUIElement {
+        app.searchFields.firstMatch
+    }
+
+    var errorView: XCUIElement {
+        app.descendants(matching: .any)["search.errorView"].firstMatch
+    }
+
+    var retryButton: XCUIElement {
+        app.buttons["search.retryButton"]
+    }
+
+    func search(for query: String) {
+        searchField.tap()
+        searchField.typeText(query)
+    }
+
+    func row(for fullName: String) -> XCUIElement {
+        app.descendants(matching: .any)["search.row.\(fullName)"].firstMatch
+    }
+
+    func openDetail(for fullName: String) {
+        row(for: fullName).tap()
+    }
+}
