@@ -54,6 +54,13 @@ struct SearchView: View {
                         .background(.bar)
                 }
             }
+            // The ticker that drives `lastRefreshedDescription` only runs
+            // while this list is on screen: start it when the results
+            // appear, stop it when they leave. See
+            // `SearchViewModel.startTicker()` for why an init-started timer
+            // on this app-lifetime view model would be wrong.
+            .onAppear { viewModel.startTicker() }
+            .onDisappear { viewModel.stopTicker() }
         case .failed(let message):
             ContentUnavailableView {
                 Label("Something went wrong", systemImage: "exclamationmark.triangle")
@@ -66,7 +73,11 @@ struct SearchView: View {
                 .buttonStyle(.borderedProminent)
                 .accessibilityIdentifier("search.retryButton")
             }
-            .accessibilityIdentifier("search.errorView")
+            // No container-level accessibility identifier here: ContentUnavailableView
+            // re-parents a container identifier onto its merged children, which was
+            // clobbering "search.retryButton" on the Retry button below. The error
+            // state is identified honestly instead — by its visible text — in the UI
+            // tests (see SearchScreen.errorView).
         }
     }
 }

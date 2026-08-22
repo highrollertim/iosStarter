@@ -37,11 +37,11 @@ final class SearchFlowUITests: XCTestCase {
             search.search(for: "swift")
         }
 
-        Then("I see an error state instead of results") {
+        Then("I see the error text instead of results") {
             XCTAssertTrue(search.errorView.waitForExistence(timeout: 5))
         }
 
-        And("the error offers a retry action") {
+        And("the retry button exists") {
             XCTAssertTrue(search.retryButton.waitForExistence(timeout: 5))
         }
     }

@@ -12,18 +12,17 @@ struct SearchScreen {
         app.searchFields.firstMatch
     }
 
+    // Identified by its visible text rather than an accessibility
+    // identifier: `ContentUnavailableView` re-parents a container-level
+    // identifier onto every descendant it merges, so there's no reliable
+    // container identifier to query by here. The heading text is stable and
+    // honestly describes the state under test.
     var errorView: XCUIElement {
-        app.descendants(matching: .any)["search.errorView"].firstMatch
+        app.staticTexts["Something went wrong"]
     }
 
-    // The Retry button is declared with identifier "search.retryButton" in
-    // the app, but `ContentUnavailableView` re-parents its accessibility
-    // identifier onto every descendant it merges (including its action
-    // button), so at runtime the button surfaces with identifier
-    // "search.errorView" instead. Query by type + that identifier — it's
-    // the only button among the several elements sharing it.
     var retryButton: XCUIElement {
-        app.buttons["search.errorView"]
+        app.buttons["search.retryButton"]
     }
 
     func search(for query: String) {
