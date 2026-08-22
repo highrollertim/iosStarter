@@ -35,7 +35,7 @@ nonisolated struct RepoDTO: Decodable, Sendable {
     }
 }
 
-extension Repo {
+nonisolated extension Repo {
     /// The single seam where API shape becomes domain shape.
     init(dto: RepoDTO) {
         self.init(
