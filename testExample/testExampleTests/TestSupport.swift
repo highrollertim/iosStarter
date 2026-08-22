@@ -81,6 +81,48 @@ actor KeyedGatedGitHubClient: GitHubClient {
     }
 }
 
+/// A `URLProtocol` that answers every request with a canned response instead
+/// of touching the network.
+///
+/// The technique: register this class on a dedicated `URLSessionConfiguration`
+/// (not `.shared`), point `LiveGitHubClient(session:)` at the resulting
+/// session, and set `handler` before each call. `URLSession` hands every
+/// request for that session to `canInit`/`startLoading` on this type instead
+/// of a real socket, so tests exercise `LiveGitHubClient`'s actual response
+/// and error handling — status codes, malformed bodies — with no real HTTP
+/// traffic and no flakiness from an actual network.
+///
+/// `handler` is `nonisolated(unsafe)` because `URLProtocol`'s loading
+/// callbacks aren't `Sendable`-checked, and it's fine here: the suites that
+/// use it are `.serialized` (see `LiveGitHubClientErrorMappingTests`), so
+/// only one test is ever touching `handler` at a time.
+final class StubURLProtocol: URLProtocol {
+    nonisolated(unsafe) static var handler: (@Sendable (URLRequest) throws -> (HTTPURLResponse, Data))?
+
+    override class func canInit(with request: URLRequest) -> Bool { true }
+
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+    override func startLoading() {
+        guard let handler = Self.handler else {
+            client?.urlProtocol(self, didFailWithError: URLError(.badServerResponse))
+            return
+        }
+        do {
+            let (response, data) = try handler(request)
+            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+            client?.urlProtocol(self, didLoad: data)
+            client?.urlProtocolDidFinishLoading(self)
+        } catch {
+            client?.urlProtocol(self, didFailWithError: error)
+        }
+    }
+
+    override func stopLoading() {
+        // No in-flight work to cancel — `startLoading()` above is synchronous.
+    }
+}
+
 extension [Repo] {
     static let fixture: [Repo] = [
         Repo(id: 1, fullName: "apple/swift", ownerLogin: "apple",

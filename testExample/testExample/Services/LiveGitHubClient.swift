@@ -29,6 +29,12 @@ nonisolated struct LiveGitHubClient: GitHubClient {
         let response: URLResponse
         do {
             (data, response) = try await session.data(from: url)
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch let error as URLError where error.code == .cancelled {
+            // URLSession reports a cancelled task as URLError(.cancelled); surface it
+            // as CancellationError so callers' cancellation handling stays in one shape.
+            throw CancellationError()
         } catch {
             throw GitHubClientError.network
         }

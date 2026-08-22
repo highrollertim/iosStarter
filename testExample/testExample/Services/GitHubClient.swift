@@ -13,7 +13,11 @@ nonisolated protocol GitHubClient: Sendable {
 ///
 /// A closed error enum (instead of rethrowing raw `URLError`/`DecodingError`)
 /// means the UI layer switches over a small, stable set of cases — and the
-/// user-facing copy lives here, once, via `LocalizedError`.
+/// user-facing copy lives here, once, via `LocalizedError`. Cancellation is
+/// deliberately *not* one of these cases: a superseded request isn't a
+/// failure, so conforming implementations (see `LiveGitHubClient`) let
+/// `CancellationError` propagate unchanged instead of folding it into
+/// `.network`, so callers can tell "cancelled" apart from "actually failed".
 nonisolated enum GitHubClientError: Error, Equatable, LocalizedError {
     case invalidQuery
     case network
