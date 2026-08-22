@@ -82,6 +82,27 @@ struct SearchViewModelTests {
         #expect(viewModel.state == .loaded(freshResult))
     }
 
+    @Test("startTicker() advances `now`; stopTicker() stops further updates")
+    func tickerStartsAndStops() async throws {
+        let spy = SpyGitHubClient(result: .success(.fixture))
+        let viewModel = SearchViewModel(client: spy)
+        let initialNow = viewModel.now
+
+        viewModel.startTicker()
+        // `Timer.publish(every: 1, ...)` ticks on wall-clock seconds, so give
+        // it a few seconds of headroom rather than racing the first tick.
+        try await poll(until: { viewModel.now != initialNow }, timeout: .seconds(4), message: "now to advance after startTicker()")
+
+        viewModel.stopTicker()
+        let stoppedNow = viewModel.now
+        // Bounded negative check, same spirit as the rest of the suite: this
+        // can't prove the ticker never fires again, only that it produces no
+        // further update within this window, which is as much as a
+        // deterministic test can honestly claim about "stopped".
+        try await Task.sleep(for: .milliseconds(1_500))
+        #expect(viewModel.now == stoppedNow)
+    }
+
     @Test("refreshed description reports whole seconds")
     func refreshedDescription() {
         let base = Date(timeIntervalSinceReferenceDate: 1_000)

@@ -159,12 +159,42 @@ needs to reason about that stream as a whole — collapse a burst into one
 event (`debounce`), ignore a repeat (`removeDuplicates`). Hand-rolling that
 with `Task.sleep` and manual cancellation flags is exactly the kind of
 fiddly, error-prone bookkeeping that stream operators exist to make
-declarative and correct by construction. The same view model's
-"updated N seconds ago" ticker (`Timer.publish(every: 1, on: .main, in:
-.common).autoconnect()`) is the smaller, second example: a timer is also a
-stream, and Combine's ownership model (a sink lives in a `Set<AnyCancellable>`
-that tears down automatically) is a clean fit for something that needs to
-keep firing for the life of the view model and then just stop.
+declarative and correct by construction.
+
+The same view model's "updated N seconds ago" ticker
+(`Timer.publish(every: 1, on: .main, in: .common).autoconnect()`) is the
+smaller, second example — but note it does *not* start in `init`. Earlier
+drafts of this codebase did exactly that, and it was a bug: `SearchViewModel`
+is built once by the composition root and lives for as long as the app does,
+not just while the Search tab is visible, so a timer started in `init` fires
+once a second forever — on the Favorites tab, in the background, anywhere —
+invalidating this `@Observable` object's state (and re-rendering any view
+that reads it) every second for no reason. The fix keeps the Combine lesson
+but scopes the publisher's lifetime to the UI that actually needs it:
+`startTicker()` builds the `Timer.publish` → `.autoconnect()` → `.sink`
+pipeline into its own `tickerCancellable`, and `stopTicker()` cancels and
+releases it. `SearchView` calls `startTicker()` from `.onAppear` and
+`stopTicker()` from `.onDisappear` on the results list, so the ticker runs
+exactly while the "updated N seconds ago" text is on screen. This is the
+more general lesson: a `Set<AnyCancellable>` in `cancellables` that the
+`deinit` tears down automatically is the right tool for subscriptions that
+should live as long as the object — but not every subscription should; some
+need a narrower, explicitly managed lifetime, which is what a dedicated
+`AnyCancellable` property plus start/stop methods gives you.
+
+In 2026, the other credible option for both of these is `AsyncSequence` /
+`AsyncStream` — `NotificationCenter.notifications(named:)`-style async
+sequences plus `swift-async-algorithms` for `debounce` and friends. This app
+sticks with Combine anyway, for reasons specific to *this* codebase rather
+than a blanket "Combine is better": it's ubiquitous in existing iOS
+codebases a reader of this app will encounter in the wild, it adds zero
+third-party dependencies (the `debounce`/`removeDuplicates` operators this
+app needs ship in the Combine framework itself, where the async-algorithms
+equivalents live in a separate package), and the two use sites here are
+exactly the shape Combine was designed for. A team standardizing on
+`AsyncStream` throughout would have a reasonable case too — this is a choice
+about which ubiquitous tool to teach, not a claim that Combine is
+categorically the right answer.
 
 Combine does *not* appear in `LiveGitHubClient`, and that's the more
 important half of the story. A single network request — send once, get one

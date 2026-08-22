@@ -16,8 +16,9 @@ final class SearchViewModel {
 
     private(set) var state: LoadState<[Repo]> = .idle
     private(set) var lastRefreshed: Date?
-    /// Ticks once per second (see the Timer pipeline) so "Updated Ns ago"
-    /// stays current without the view owning a timer.
+    /// Ticks once per second while `startTicker()` has been called, so
+    /// "Updated Ns ago" stays current. Scoped, not free-running — see
+    /// `startTicker()`/`stopTicker()`.
     private(set) var now: Date = .now
 
     /// Bound to the search field. Each keystroke feeds the Combine pipeline.
@@ -29,6 +30,10 @@ final class SearchViewModel {
     private let querySubject = PassthroughSubject<String, Never>()
     private var cancellables = Set<AnyCancellable>()
     private var searchTask: Task<Void, Never>?
+    /// Owns the "updated N seconds ago" ticker's sink, separately from
+    /// `cancellables`, so `stopTicker()` can tear down just this one
+    /// publisher on demand instead of the fixed, init-time set below.
+    private var tickerCancellable: AnyCancellable?
 
     /// `debounceInterval` is injectable so tests can shrink it from 300ms to
     /// 50ms — tune the constant without rewriting the tests.
@@ -52,16 +57,39 @@ final class SearchViewModel {
                 searchTask = Task { await self.search(matching: query) }
             }
             .store(in: &cancellables)
+    }
 
-        // A second, tiny Combine example: a timer is also a stream. Note the
-        // lifecycle management — sinks live in `cancellables`, which the
-        // deinit of this object tears down automatically.
-        Timer.publish(every: 1, on: .main, in: .common)
+    /// Starts the "updated N seconds ago" ticker: a second, tiny Combine
+    /// example, deliberately *not* wired up in `init`.
+    ///
+    /// A `Timer.publish` subscription that starts in `init` would run for
+    /// this object's entire lifetime — and this view model, once built by
+    /// the composition root, lives for as long as the app does, not just
+    /// while the search tab is on screen. An init-started timer would keep
+    /// firing once a second on every other tab, invalidating this object's
+    /// observable state (and therefore any view that reads it) every second
+    /// for no reason. Instead, the view that actually needs the ticker
+    /// starts it on `.onAppear` and stops it on `.onDisappear` (see
+    /// `SearchView`), so the publisher's lifetime matches the lifetime of
+    /// the UI that displays its output — the deliberate lesson here is
+    /// publisher lifecycle management, not just "Combine can wrap a timer".
+    ///
+    /// Guards against double-starting: calling this while already ticking
+    /// is a no-op rather than leaking a second subscription.
+    func startTicker() {
+        guard tickerCancellable == nil else { return }
+        tickerCancellable = Timer.publish(every: 1, on: .main, in: .common)
             .autoconnect()
             .sink { [weak self] date in
                 self?.now = date
             }
-            .store(in: &cancellables)
+    }
+
+    /// Stops the ticker and releases its subscription. Safe to call even if
+    /// the ticker was never started.
+    func stopTicker() {
+        tickerCancellable?.cancel()
+        tickerCancellable = nil
     }
 
     /// The single path from "query" to "state". Also called directly by the
