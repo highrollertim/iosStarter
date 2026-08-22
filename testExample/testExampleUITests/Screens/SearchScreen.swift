@@ -16,8 +16,14 @@ struct SearchScreen {
         app.descendants(matching: .any)["search.errorView"].firstMatch
     }
 
+    // The Retry button is declared with identifier "search.retryButton" in
+    // the app, but `ContentUnavailableView` re-parents its accessibility
+    // identifier onto every descendant it merges (including its action
+    // button), so at runtime the button surfaces with identifier
+    // "search.errorView" instead. Query by type + that identifier — it's
+    // the only button among the several elements sharing it.
     var retryButton: XCUIElement {
-        app.buttons["search.retryButton"]
+        app.buttons["search.errorView"]
     }
 
     func search(for query: String) {

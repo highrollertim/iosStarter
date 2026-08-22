@@ -23,4 +23,26 @@ final class SearchFlowUITests: XCTestCase {
             XCTAssertTrue(search.row(for: "apple/swift").waitForExistence(timeout: 5))
         }
     }
+
+    @MainActor
+    func testSearchFailureShowsRetryableError() {
+        let app = XCUIApplication.launchedForUITest(scenario: "searchError")
+        let search = SearchScreen(app: app)
+
+        Given("the app has launched with GitHub rate-limiting searches") {
+            XCTAssertTrue(search.searchField.waitForExistence(timeout: 5))
+        }
+
+        When("I search for \"swift\"") {
+            search.search(for: "swift")
+        }
+
+        Then("I see an error state instead of results") {
+            XCTAssertTrue(search.errorView.waitForExistence(timeout: 5))
+        }
+
+        And("the error offers a retry action") {
+            XCTAssertTrue(search.retryButton.waitForExistence(timeout: 5))
+        }
+    }
 }
