@@ -31,11 +31,24 @@ struct RepoRowView: View {
         .accessibilityLabel(accessibilityDescription)
     }
 
+    // Whole, localizable sentences — not fragments joined with ", ". Joining
+    // fragments (`[a, b, c].joined(separator: ", ")`) bakes in English word
+    // order and punctuation; a translator only ever sees isolated pieces
+    // like "written in Swift" with no sentence around them, so they can't
+    // reorder or re-punctuate for a language that doesn't work like English.
+    // `String(localized:)` on each complete sentence gives translators the
+    // whole thing to work with instead.
     private var accessibilityDescription: String {
-        var parts = [repo.fullName, "\(repo.stargazersCount) stars"]
-        if let language = repo.language { parts.append("written in \(language)") }
-        if let summary = repo.summary { parts.append(summary) }
-        return parts.joined(separator: ", ")
+        switch (repo.language, repo.summary) {
+        case let (language?, summary?):
+            String(localized: "\(repo.fullName), \(repo.stargazersCount) stars, written in \(language). \(summary)")
+        case let (language?, nil):
+            String(localized: "\(repo.fullName), \(repo.stargazersCount) stars, written in \(language).")
+        case let (nil, summary?):
+            String(localized: "\(repo.fullName), \(repo.stargazersCount) stars. \(summary)")
+        case (nil, nil):
+            String(localized: "\(repo.fullName), \(repo.stargazersCount) stars.")
+        }
     }
 }
 

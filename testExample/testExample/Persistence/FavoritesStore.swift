@@ -10,7 +10,10 @@ struct FavoritesStore {
     let context: ModelContext
 
     func isFavorite(_ repo: Repo) -> Bool {
-        ((try? existingFavorite(for: repo)) ?? nil) != nil
+        // `try?` on a `throws -> FavoriteRepo?` already flattens to
+        // `FavoriteRepo??` and SE-0230 collapses that to `FavoriteRepo?` —
+        // no `?? nil` needed to get there.
+        (try? existingFavorite(for: repo)) != nil
     }
 
     /// Favorite if absent, unfavorite if present.

@@ -20,7 +20,18 @@
     "Owner" : {},
     "View on GitHub" : {},
     "Add to favorites" : {},
-    "Remove from favorites" : {}
+    "Remove from favorites" : {},
+    "That search can't be sent. Try different text." : {},
+    "Couldn't reach GitHub. Check your connection and try again." : {},
+    "GitHub is rate-limiting searches right now. Give it a minute." : {},
+    "GitHub had a problem (HTTP %lld). Try again shortly." : {},
+    "GitHub sent a response this app couldn't read." : {},
+    "Something went wrong. Please try again." : {},
+    "Updated %llds ago" : {},
+    "%@, %lld stars, written in %@. %@" : {},
+    "%@, %lld stars, written in %@." : {},
+    "%@, %lld stars. %@" : {},
+    "%@, %lld stars." : {}
   },
   "version" : "1.0"
 }
