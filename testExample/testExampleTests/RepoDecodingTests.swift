@@ -44,7 +44,7 @@ struct RepoDecodingTests {
 
         #expect(repos.count == 2)
         let first = try #require(repos.first)
-        #expect(first.id == 44838949)
+        #expect(first.id == 44_838_949)
         #expect(first.fullName == "apple/swift")
         #expect(first.ownerLogin == "apple")
         #expect(first.summary == "The Swift Programming Language")

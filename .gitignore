@@ -2,21 +2,22 @@
 build/
 DerivedData/
 *.xcuserstate
+# Per-user, per-machine state. Its sibling xcshareddata/ holds the shared
+# scheme every `xcodebuild -scheme` command in the README depends on; nothing
+# here excludes it, so it needs no negation to stay tracked.
 xcuserdata/
 *.moved-aside
-# ...but xcshareddata is the *other* half of that directory pair, and it must
-# stay tracked. Xcode autocreates a per-user scheme under xcuserdata/ the
-# first time you open a project, which works fine locally and then vanishes
-# on a fresh clone — that is why `xcodebuild -scheme testExample` used to fail
-# for everyone but the original author. The shared scheme lives in
-# testExample.xcodeproj/xcshareddata/xcschemes/ and is committed deliberately.
-!*.xcodeproj/xcshareddata/
 *.pbxuser
 !default.pbxuser
 *.mode1v3
 !default.mode1v3
 *.mode2v3
 *.perspectivev3
+*.xcscmblueprint
+timeline.xctimeline
+*.hmap
+*.ipa
+*.dSYM.zip
 
 # Swift Package Manager
 .build/

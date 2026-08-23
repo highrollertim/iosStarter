@@ -1,0 +1,58 @@
+# Written for a remote this repository does not yet have: there is no `git
+# remote` configured, so nothing has ever run this file. It is here so that
+# the first push to GitHub gets the same two commands the README documents,
+# rather than someone reinventing them under time pressure.
+#
+# Both jobs run the shared `testExample` scheme, which means both run
+# `testExample.xctestplan` — English *and* German. That is deliberate: the
+# German configuration is the app's localization check, and a check that only
+# runs when someone remembers to ask for it is not a check.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  unit-tests:
+    name: Unit tests (English + German)
+    runs-on: macos-26
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select Xcode 26.2
+        run: sudo xcode-select -s /Applications/Xcode_26.2.app
+      - name: Test
+        working-directory: testExample
+        run: |
+          xcodebuild test \
+            -project testExample.xcodeproj \
+            -scheme testExample \
+            -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \
+            -only-testing:testExampleTests
+
+  ui-tests:
+    name: UI tests (English + German)
+    runs-on: macos-26
+    # Not `continue-on-error`: a UI suite whose failures are advisory stops
+    # being a suite. The timeout is the safety valve instead — the suite takes
+    # roughly eleven minutes across both configurations, so thirty is a hang,
+    # not a slow day.
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select Xcode 26.2
+        run: sudo xcode-select -s /Applications/Xcode_26.2.app
+      # `SearchScreen.search(for:)` waits on the software keyboard, which
+      # never appears while the simulator is paired with a hardware one.
+      - name: Disconnect the simulator's hardware keyboard
+        run: defaults write com.apple.iphonesimulator ConnectHardwareKeyboard -bool false
+      - name: Test
+        working-directory: testExample
+        run: |
+          xcodebuild test \
+            -project testExample.xcodeproj \
+            -scheme testExample \
+            -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \
+            -only-testing:testExampleUITests
