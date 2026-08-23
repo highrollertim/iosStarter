@@ -61,8 +61,12 @@ struct RepoRowView: View {
         // `.ignore`, not `.combine`: the label below replaces the children's
         // text completely, so merging their labels in only to overwrite them
         // is wasted work — and `.combine` merges more than text. It absorbs
-        // the children's *traits and actions* too, which in a `List`'s edit
-        // mode swallowed the row's delete control into this element.
+        // the children's *traits and actions* too, which is a wider blast
+        // radius than this view needs. (It is not, as an earlier draft
+        // claimed, what hides the row's edit-mode delete control from
+        // `app.buttons`: that control is published by `List` beside the row
+        // rather than inside it, so no accessibility choice here can reach
+        // it. Measured — see `FavoritesScreen.deleteFirstRowInEditMode()`.)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Self.accessibilityDescription(for: repo))
     }

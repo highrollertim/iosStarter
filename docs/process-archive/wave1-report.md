@@ -1,3 +1,10 @@
+> **Archived — point-in-time remediation record (Wave 1, 2026-08-22).**
+> Superseded by the code and `ARCHITECTURE.md`. Line numbers, code
+> listings and "current state" claims herein describe the tree as it
+> stood at the end of that wave and **MUST NOT** be used as reference —
+> later waves changed several of the files described here. Kept only as a
+> record of what was fixed and why.
+
 # Wave 1 remediation report
 
 Branch: `feature/audit-remediation`

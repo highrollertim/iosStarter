@@ -1,3 +1,11 @@
+> **Archived — point-in-time remediation record (Round 3, Wave 1,
+> 2026-08-23).** Superseded by the code and `ARCHITECTURE.md`. Line
+> numbers, code listings and "current state" claims herein describe the
+> tree as it stood at the end of that wave and **MUST NOT** be used as
+> reference — Round 3 Wave 2 changed the row's accessibility label, the
+> string catalog and the test invocation. Kept only as a record of what
+> was fixed and why.
+
 # Round 3 — Wave 1 report
 
 Branch: `feature/round3-remediation`. Base: `513c8c7`. Seven commits, both

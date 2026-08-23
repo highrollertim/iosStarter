@@ -1,3 +1,11 @@
+> **Archived — point-in-time remediation record (Wave 2, 2026-08-22).**
+> Superseded by the code and `ARCHITECTURE.md`. Line numbers, code
+> listings and "current state" claims herein describe the tree as it
+> stood at the end of that wave and **MUST NOT** be used as reference —
+> in particular the icon variants and the localization described here
+> were both reworked in Round 3. Kept only as a record of what was fixed
+> and why.
+
 # Wave 2 remediation report — shipping hygiene, assets, docs, localization
 
 Branch: `feature/audit-remediation`
@@ -19,6 +27,9 @@ Toolchain: Xcode 26.2 (17C52), Apple Swift 6.2.3, iOS 26.2 SDK, simulator iPhone
 Final `git status`: clean apart from the untracked `RepoScout-Guide.pdf`, left
 uncommitted per C6.
 
+> *Correction (Round 3, Wave 2):* `RepoScout-Guide.pdf` was committed
+> shortly afterwards, in `513c8c7`, and is tracked at the repository root.
+
 ## Verification summary
 
 | Check | Evidence |
@@ -31,6 +42,15 @@ uncommitted per C6.
 | Icon in bundle | `AppIcon60x60@2x.png` emplaced; no actool warnings in build tail |
 | German localization compiled | `de.lproj/Localizable.strings` + `de.lproj/Localizable.stringsdict` in the app bundle |
 | German launch test | `LaunchTests` under `-testLanguage de` → `** TEST SUCCEEDED **`, 16 runs, 0 failures |
+
+> *Correction (Round 3, Wave 2):* these two rows contradict each other as
+> written — both claim to be "the full suite", one says 40 and the other
+> 58 — and neither says which counter produced its number. Swift Testing,
+> XCTest and `xcodebuild` each count differently (parameterized cases
+> expand into runs; the two bundles are summarized separately), so a bare
+> total is not a comparable figure. Treat both rows as "it passed" and
+> nothing more. The current suite's counts, and the tools that produced
+> them, are in `r3-wave2-report.md`.
 
 ---
 

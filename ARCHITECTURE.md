@@ -41,8 +41,10 @@ the latest character, to do its job.
 ```swift
 querySubject
     .debounce(for: debounceInterval, scheduler: DispatchQueue.main)
-    .filter { @MainActor [weak self] query in query != self?.lastDispatchedQuery }
-    .sink { @MainActor [weak self] query in ... }
+    .filter { @MainActor [weak self] query in
+        query.trimmingCharacters(in: .whitespacesAndNewlines) != self?.lastDispatchedQuery
+    }
+    .sink { @MainActor [weak self] query in self?.dispatch(query) }
 ```
 
 Debounce means a burst of keystrokes only produces one downstream event,
@@ -66,6 +68,20 @@ doesn't. It also closes the other half of the bug: `retry()` and
 still in flight when the user taps Retry is filtered here rather than racing
 a second identical request onto the wire.
 
+Note that the key and the candidate are **both trimmed**. Storing the trimmed
+query alone is not enough: the filter would still compare the raw emission
+against it, so typing a trailing space after "swift" reads as a different
+query and fires a second identical request. Both sides of a comparison have
+to be normalized the same way, or normalizing one side is decoration.
+
+"By any route" is a claim the code makes true rather than hopes for.
+`dispatch(_:)` is the single entry point — the debounce sink,
+`submitImmediately()`, `retry()` and pull-to-refresh all call it, and
+`search(matching:)` is `private` — so two invariants hold by construction:
+every in-flight search *is* `searchTask` (a caller with its own `Task` would
+be invisible to the cancellation on the next line), and the dedup key always
+describes the search that is actually running.
+
 The general form: an input-level dedup is a statement that the operation is a
 pure function of its input. If it isn't, dedup on what came back instead.
 
@@ -78,12 +94,22 @@ GitHub's required headers and a 15-second timeout, awaits
 and decodes. Neither the view model nor the view ever sees `URLSession`
 directly.
 
+One trap in that URL building is worth the detour, because it is invisible
+until someone searches for the wrong thing. `URLComponents.queryItems`
+percent-encodes correctly *for a URL* — and `+` is a legal character in a
+query, so it is left alone. GitHub's endpoint then form-decodes the query,
+where `+` means a space: searching for "c++" asks GitHub for "c  ". The client
+rewrites `percentEncodedQuery` after setting `queryItems`, escaping `+` as
+`%2B`, and `LiveGitHubClientTests` pins both halves — that `q=c%2B%2B`, and
+that nothing else in the query was disturbed. Encoding is never correct in the
+abstract; it is correct with respect to whoever decodes it.
+
 **`LoadState`.** While a *first* request is in flight, the view model sets its
 `state` property to `.loading`; when the request finishes it becomes either
-`.loaded(repos, isRefreshing: false)` or `.failed(message:)`. `LoadState` is a
-four-case enum — `idle`, `loading`, `loaded`, `failed` — that replaces the more
-common pattern of separate `isLoading: Bool`, `results: [Repo]`, and `error:
-Error?` properties, which together can represent nonsense combinations
+`.loaded(repos, isRefreshing: false)` or `.failed(message:stale:)`. `LoadState`
+is a four-case enum — `idle`, `loading`, `loaded`, `failed` — that replaces the
+more common pattern of separate `isLoading: Bool`, `results: [Repo]`, and
+`error: Error?` properties, which together can represent nonsense combinations
 (loading *and* showing an old error, for instance) that this enum makes
 impossible to construct.
 
@@ -92,29 +118,58 @@ nonisolated enum LoadState<Value: Sendable & Equatable>: Equatable, Sendable {
     case idle
     case loading
     case loaded(Value, isRefreshing: Bool)
-    case failed(message: String)
+    case failed(message: String, stale: Value?)
 }
 ```
 
-The `isRefreshing` flag inside `loaded` is worth dwelling on, because the
-textbook four-case enum cannot express the fifth state a real search screen
-has: *results already on screen while a refinement is in flight*. Without it,
-refining a search has two bad options — blank the list back to a spinner (the
-user loses their place and the screen flickers on every keystroke) or lie
-about the request being finished. The flag lives *inside* `loaded` rather than
-as a sibling `isLoading` property precisely so it is impossible to be
-"refreshing" with nothing to refresh. Illegal states stay unrepresentable; the
-enum just has to be honest about which states are actually legal.
+The two payloads that aren't in the textbook version are worth dwelling on,
+because they are the same lesson twice.
+
+`isRefreshing` inside `loaded` exists because the four-case enum cannot
+express the fifth state a real search screen has: *results already on screen
+while a refinement is in flight*. Without it, refining a search has two bad
+options — blank the list back to a spinner (the user loses their place and the
+screen flickers on every keystroke) or lie about the request being finished.
+The flag lives *inside* `loaded` rather than as a sibling `isLoading` property
+precisely so it is impossible to be "refreshing" with nothing to refresh.
+
+`stale` inside `failed` is the same state one step later: the refinement that
+was in flight came back as an error, and the results it was refining are still
+the best thing anyone has. Blanking them punishes the user for a failure by
+throwing away the last thing that worked. A first-load failure has nothing to
+keep and carries `nil`, which is what selects the full-screen presentation. An
+`Optional` payload rather than a fifth case, so the view's `switch` still has
+one failure branch to reason about.
+
+Illegal states stay unrepresentable; the enum just has to be honest about
+which states are actually legal.
 
 **`SearchView`'s switch.** The view's body is a `switch` over
 `viewModel.state` with one branch per case: an empty-state prompt for
 `.idle`, a spinner for `.loading`, a "no results" view for `.loaded` with an
 empty array, the results list for `.loaded` (which passes `isRefreshing` down
 to the footer, so a refinement shows a small spinner beside "Updated 3 seconds
-ago" instead of clearing the list), and an error view with a retry button for
-`.failed`. Because the switch is exhaustive, the compiler itself guarantees
-every state the view model can be in has a corresponding screen — there's no
-way to add a fifth `LoadState` case later and forget to handle it in the UI.
+ago" instead of clearing the list), and — for `.failed` — *two* presentations:
+a compact error bar in a `safeAreaBar` beneath results that are still worth
+reading, or the full-screen error with a retry button when there is nothing to
+keep. (The *model* says only "these are the results that were on screen"; the
+"is that worth showing" judgement lives in the view, which treats an empty
+stale array as nothing to keep — a zero-row list under an error bar is worse
+than the full-screen error.) Because the switch is exhaustive, the compiler
+itself guarantees every
+state the view model can be in has a corresponding screen — there's no way to
+add a fifth `LoadState` case later and forget to handle it in the UI.
+
+Two details of that switch come from state living *outside* the enum, which is
+a judgement call worth naming. The empty-results branch titles itself with
+`viewModel.lastCompletedQuery`, not `searchText`: the live field is still
+ahead of the debounce and may already hold the next query, so titling with it
+announces "No Results for …" about a search nobody ran. And the results list
+carries `.refreshable`, which is only safe to expose *because* of the
+`dispatch(_:)` funnel — the pull cancels whatever is in flight and becomes the
+search that owns the screen. `lastCompletedQuery` is a property beside `state`
+rather than a payload inside it because `LoadState` is a generic lifecycle
+enum that knows nothing about searching.
 
 That's the whole round trip: a keystroke becomes a stream event, the stream
 event becomes (after debouncing) an async call behind a protocol, the async
@@ -220,6 +275,38 @@ The summary worth carrying away: default isolation decides what
 codebase ends up with a main-thread JSON decoder it believes is on a
 background queue.
 
+A small corollary of the same default: `Support/Logging.swift` declares its
+two `Logger`s `nonisolated static let`. Under default-`MainActor` isolation
+they would otherwise be main-actor-isolated and therefore unreachable from
+exactly the code that most needs them — the `nonisolated`/`@concurrent`
+network paths where failures happen. `Logger` is `Sendable`, so the keyword
+costs nothing and buys reachability.
+
+**Cancellation is a flag, not an error type.** `SearchViewModel` has one
+`catch`, and it asks `Task.isCancelled` — never whether the error *is* a
+`CancellationError`. The distinction sounds pedantic and is not: this app's
+own `LiveGitHubClient` maps any `URLError(.cancelled)` to `CancellationError`,
+and `URLSession` raises that code for session invalidation and other teardown
+that has nothing to do with `Task` cancellation. An earlier version had a
+`catch is CancellationError { return }` clause, and the consequence was a
+screen stuck on `.loading` forever: no `.failed` state, so no Retry button
+(it lives on `.failed`), and the query still recorded as dispatched, so
+retyping it was filtered out too. Asking the flag covers both cases — a
+genuinely superseded search returns silently, its successor owning the screen;
+anything else becomes a failure the user can act on. The general form: an
+error's *type* is a claim its producer made, while `Task.isCancelled` is the
+runtime's own answer to the question you are actually asking.
+
+**Roles declare; behaviours are opt-ins.** `RootView`'s search tab is
+`Tab(..., role: .search)`, which states what the tab *is* — the system pins it
+to the trailing edge and gives it the search presentation for the platform.
+It is easy to assume the iOS 26 chrome that usually accompanies it comes along
+for free. It doesn't: `.searchToolbarBehavior(.minimize)` (the search field
+collapsing toward the tab bar as you scroll into results) and
+`.tabBarMinimizeBehavior(.onScrollDown)` (the tab bar getting out of the way)
+are separate modifiers, applied explicitly here. Reading a role as a bundle of
+appearance is how a codebase acquires behaviour nobody can point at.
+
 **`@Query` for reads, a store for writes.** `FavoritesView` and
 `RepoDetailView` both read favorites straight off SwiftData with `@Query` —
 which gives live, animated updates for free whenever a favorite is added or
@@ -302,14 +389,27 @@ not cosmetic factoring. `@Observable` tracks reads *per `body` evaluation*:
 every observable property read while a `body` runs becomes a dependency of
 that `body`. `lastRefreshedDescription` reads `viewModel.now`, which the
 ticker rewrites once a second. Inline that text back into `SearchView` — even
-inside the `safeAreaInset` builder — and the read is attributed to
+inside the `safeAreaBar` builder — and the read is attributed to
 `SearchView.body`, so the entire screen (the `NavigationStack`, the
-`searchable` field, the whole `List`) is invalidated every second, forever.
-Pulled out into a leaf, the once-a-second dependency belongs to a view whose
-body is two `Text`s. The rule: **confine time-driven invalidation to the
-smallest view that actually displays the time.** This is the single most
-common way a well-behaved `@Observable` app quietly starts re-rendering
-everything.
+`searchable` field, the whole `List`) is re-evaluated every second, forever.
+Re-evaluated, not re-rendered: SwiftUI's structural diffing elides the rows
+that did not change, so the cost is the evaluation rather than a full redraw —
+which is still a cost worth not paying once a second. Pulled out into a leaf,
+the once-a-second dependency belongs to a view whose body is two `Text`s. The
+rule: **confine time-driven invalidation to the smallest view that actually
+displays the time.** This is the single most common way a well-behaved
+`@Observable` app quietly starts re-rendering everything.
+
+The insulation is one-directional, which is the part that is easy to
+overstate: it keeps the ticker's invalidation inside the leaf, but it does not
+exempt the leaf from the parent's. Anything that re-evaluates `SearchView.body`
+re-evaluates this too. That direction is harmless; the once-a-second one
+compounds.
+
+(The bar itself is `.safeAreaBar(edge: .bottom)`, not `.safeAreaInset`. The
+bar variant supplies the system bar background and scroll-edge treatment, so
+the leaf carries no `.background(.bar)` and no width-stretching frame of its
+own — the container's job stays in the container.)
 
 In 2026, the other credible option for both of these is `AsyncSequence` /
 `AsyncStream` — `NotificationCenter.notifications(named:)`-style async
@@ -346,37 +446,69 @@ in-place: "Note what is *not* here: no Combine."
 These two are one topic in practice, because the app's best accessibility
 lesson is a localization decision.
 
-**Whole sentences, not joined fragments.** `RepoRowView` merges its four
-labels into a single accessibility element
-(`.accessibilityElement(children: .combine)`) so VoiceOver users hear one
-result rather than stepping through four fragments. The interesting part is
-how the label is *built*. The obvious implementation collects fragments and
-joins them — `[name, "\(stars) stars", "written in \(language)"]
+**Whole sentences, not joined fragments.** `RepoRowView` replaces its four
+labels with a single accessibility element
+(`.accessibilityElement(children: .ignore)`) so VoiceOver users hear one
+result rather than stepping through four fragments. `.ignore` rather than
+`.combine`, because the label below replaces the children's text completely:
+merging their labels in only to overwrite them is wasted work, and `.combine`
+merges more than text — it absorbs the children's traits and actions too,
+which is a wider blast radius than this view needs. The interesting part is
+how the label is *built*. The obvious implementation collects
+fragments and joins them — `[name, "\(stars) stars", "written in \(language)"]
 .joined(separator: ", ")` — and that bakes English into the app in a way no
 translator can undo: it fixes word order and punctuation in code, and it
 hands the translator isolated scraps like "written in Swift" with no sentence
 around them. `RepoRowView` instead has four `String(localized:)` calls, one
 per combination of optional language and optional summary, each a complete
-sentence. A German translator gets "%1$@, %2$@ Sterne, in %3$@ geschrieben."
+sentence. A German translator gets "%1$@, %#@starCount@, in %3$@ geschrieben."
 and can put the verb where German puts verbs. Four near-duplicate strings
 looks like the worse code and is the better product.
 
-**Numbers are formatted, not interpolated.** The star count goes through
-`.formatted()` before it reaches either the visible label or the
-accessibility sentence. Interpolating an `Int` directly into a
-`LocalizedStringKey` produces the literal catalog key `%lld` and renders
-"67000" ungrouped in every locale; `.formatted()` gives "67,000" / "67 000" /
-"६७,०००" as appropriate, and VoiceOver says "sixty-seven thousand" instead of
-"six seven zero zero zero".
+**Numbers: formatted where they stand alone, raw where a noun has to agree
+with them.** The *visible* star count goes through `.formatted()`.
+Interpolating an `Int` directly into a `LocalizedStringKey` produces the
+literal catalog key `%lld` and renders "67000" ungrouped in every locale;
+`.formatted()` gives "67,000" / "67 000" / "६७,०००" as appropriate. Nothing
+lands in the string catalog at all, because `Label` receives a plain `String`.
 
-That choice has a cost, and it is the honest trade to name here: because the
-count arrives as a pre-formatted `%@` rather than a `%lld`, those four
-sentences **cannot** carry plural variations — a plural variation needs a
-number to inflect on. For a screen-reader label read aloud once, locale-correct
-number formatting is worth more than agreement on the word "stars". The
-"Updated %lld seconds ago" footer, where the number is small and genuinely
-integral, keeps its `%lld` and *does* have `one`/`other` variations in both
-languages. Different strings, different right answers.
+The accessibility sentences do the opposite, and the reason is the useful
+lesson. They used to interpolate the same pre-formatted count, so the catalog
+saw a `%@` — a string that happens to contain digits — and every locale read
+"1 stars". An earlier draft of this document called that an unavoidable trade:
+you could have locale-correct number formatting *or* plural agreement, not
+both. **That was wrong**, and the technique that disproves it is worth
+knowing: the sentences now interpolate the raw `Int`, so the key carries a
+`%lld`, and the catalog attaches a **substitution** to that argument —
+
+```json
+"stringUnit": { "value": "%1$@, %#@starCount@, written in %3$@." },
+"substitutions": {
+  "starCount": {
+    "argNum": 2, "formatSpecifier": "lld",
+    "variations": { "plural": {
+      "one":   { "stringUnit": { "value": "%arg star"  } },
+      "other": { "stringUnit": { "value": "%arg stars" } }
+    } }
+  }
+}
+```
+
+— so the sentence stays **one key** for the translator while the noun beside
+the number inflects inside it: "1 star"/"5 stars", "1 Stern"/"5 Sterne". This
+is what a String Catalog substitution is *for*, and it is the thing to reach
+for whenever a count sits inside a larger sentence. `RepoRowLabelTests` pins
+all four shapes in both languages, because a malformed substitution fails
+silently — the sentence just comes back saying "1 stars", or with a literal
+`%#@starCount@` in it.
+
+What is genuinely given up is digit grouping in the spoken label: `%lld`
+renders "67000" rather than "67,000". For a count VoiceOver reads aloud once,
+agreement is worth more than a thousands separator — but it is a trade, not a
+free lunch, and the visible label (which has no noun to agree with) still gets
+the grouping. The "Updated %lld seconds ago" footer needs no substitution at
+all: its number is the whole string's only argument, so plain `one`/`other`
+variations on the key suffice.
 
 **Dynamic Type is a layout problem, not a font-size problem.**
 `RepoRowView` drops its `lineLimit` entirely at accessibility sizes (two lines
@@ -386,6 +518,29 @@ falls back to a stacked one when it doesn't fit. The failure it prevents is
 worth stating: at AX5, "67,000" and "C++" side by side overflow and truncate
 to "67,0…" — and a truncated number doesn't read as an unclear number, it
 reads as a *different* number.
+
+**Contrast is an asset, not an opacity.** The row's de-emphasized text used to
+be `Color.primary.opacity(0.65)`, which the accessibility audit accepted and a
+user with Increase Contrast switched on did not: a fixed alpha is a claim
+about the background it will be composited over, and it opts the text out of
+the system's contrast substitution entirely, because there is nothing left for
+the system to substitute. `Color("Deemphasized")` names four measured values
+instead — light, dark, and a high-contrast variant of each — so asking for
+more contrast actually produces more contrast. (The reason it is not
+`.foregroundStyle(.secondary)` at all is the audit's original finding: the
+system `secondaryLabel` renders around 3.9:1 against the default background,
+under AA's 4.5:1 for text below 18pt, which is every line in this row. A
+semantic colour name is not a guarantee.)
+
+**A toggle's label does not change; its trait does.** The favorite button on
+the detail screen is always labelled "Favorite" and carries
+`.accessibilityAddTraits(.isSelected)` when the repository is favorited, so
+VoiceOver reads "Favorite, selected". The tempting alternative — flipping the
+label to "Remove from Favorites" once it is favorited — produces "Remove from
+Favorites, selected": a name describing the *action* next to a state
+describing the *result*. Say a control's name in its label and its state in
+its traits, never both in the label. It also halves the strings a translator
+has to keep in sync.
 
 **The ticker is hidden from VoiceOver**, via `.accessibilityHidden(true)` on
 the footer. This is not laziness. A VoiceOver element whose label changes once
@@ -400,30 +555,81 @@ directly in the catalog for SwiftUI literals like `Text("Stars")`. Without
 that, a translator seeing "Stars" alone cannot tell a noun from a verb from a
 button title, and the four VoiceOver sentences are unreadable.
 
-**The one thing localization broke was the test suite**, which is worth
-knowing before you run it in another language. Under `-testLanguage de` the
-UI suite's *identifier*-based queries all pass; its *label*-based queries do
-not. One of those was the app's fault and is fixed — the error state now
-carries `search.errorView` on its description text instead of being matched
-by the literal string "Something went wrong". The rest are queries against
-strings Apple owns: `ContentUnavailableView.search(text:)`'s "No Results"
-title, `EditButton`'s "Edit", the "Delete" confirmation, and the Favorites
-tab's title (SwiftUI's `Tab` exposes no way to identify the tab-bar button
-it produces). Those have no app-side fix that isn't worse than the problem,
-so the suite is written to run in the development language and `LaunchTests`
-serves as the German smoke check.
+**German is not a smoke test you remember to run; it is a test plan
+configuration.** `testExample.xctestplan` declares two configurations,
+English (no override) and German (`language: de`, `region: DE`), so *every*
+test invocation — `xcodebuild test`, `Cmd-U`, either `-only-testing:` suite —
+runs the whole thing twice. The unit suite's German pass is what proves the
+catalog's plural rules; the UI suite's is what proves the screens still work
+when every string gets longer.
+
+Almost all of the UI suite survives that, because it queries by accessibility
+identifier: screens, rows, the error text, and — since `Tab` carries an
+`.accessibilityIdentifier` onto the tab-bar button it produces — the tabs.
+Three assertions cannot, because they match strings **Apple** owns and
+translates: `ContentUnavailableView.search(text:)`'s "No Results" title,
+`EditButton`'s "Edit" together with the "Delete" confirmation it leads to, and
+`UISearchTextField`'s "Clear text" button (matched only to *suppress* an
+unfixable hit-region issue in the accessibility audit). The tests that touch
+those open with `skipUnlessRunningInEnglish(matching:)`, so the German run
+reports them as skipped, with the reason, instead of failing on a string this
+app does not own.
+
+That gate is a runtime check rather than plan configuration for a reason worth
+recording: a test plan configuration carries `language` and `region` but *not*
+per-configuration test selection. A `skippedTests` array inside a
+configuration's `options` is accepted by the file format and then ignored —
+measured, not assumed. Selection in a plan is per *target*, and a target-level
+skip would remove those tests from the English run, which is the run they
+exist for.
 
 ## Shipping hygiene
 
 The unglamorous settings, and why each is what it is.
 
-**The scheme is shared.** `xcshareddata/xcschemes/testExample.xcscheme` is
-committed; `.gitignore` excludes `xcuserdata/` and explicitly says why the
-other half of that pair stays tracked. Xcode autocreates a *user* scheme the
+**The scheme is shared, and it runs a shared test plan.**
+`xcshareddata/xcschemes/testExample.xcscheme` is committed; `.gitignore`
+excludes `xcuserdata/` and says, in two lines, why the other half of that pair
+needs no negation to stay tracked. Xcode autocreates a *user* scheme the
 first time you open a project, which works locally and then doesn't exist on
 anyone else's clone — so every `xcodebuild -scheme` command in the README
 used to fail for every reader but the author. This is the single highest-value
 item in this section: a repo that exists to be read must build from a clone.
+
+The scheme's test action names `testExample.xctestplan` rather than listing
+test targets inline, which moves three decisions out of per-user Xcode UI and
+into a reviewable file: the two language configurations described above, which
+suite is parallelizable (the unit target yes; the UI target no, because
+`XCUIApplication` drives one simulator), and code coverage.
+
+**Coverage is on, and scoped to the app.** The plan gathers coverage for the
+`testExample` app target only. Left unscoped, the test bundles count as
+instrumented code and report their own near-total coverage back into the
+number, which then mostly measures how much test code there is. A coverage
+figure that flatters itself is worse than none. Read it with
+`xcrun xccov view --report --only-targets <result-bundle>`.
+
+**A CI workflow for a remote this repo does not have yet.**
+`.github/workflows/ci.yml` runs the unit suite and the UI suite as two jobs on
+`macos-26`, each through the shared scheme — which means each through the test
+plan, in both languages. There is no `git remote` configured, so nothing has
+ever executed it; the header comment says so. It is committed anyway because
+the alternative is that the commands get reinvented, differently, by whoever
+first wires up a remote. Note the UI job's one non-obvious step: the software
+keyboard never appears while the simulator is paired with a hardware one, and
+`SearchScreen.search(for:)` waits on it.
+
+**A `.swift-format` at the root.** Toolchain-native (`swift format`, no
+package to add), and tuned *to* this codebase rather than the other way
+around: four-space indentation, a 120-column line limit because these files
+carry long explanatory comments, `indentConditionalCompilationBlocks: false`
+because whole files here are wrapped in `#if DEBUG` and indenting them all by
+four would be pure churn, and `AlwaysUseLowerCamelCase` off because the UI
+suite's BDD helpers are deliberately `Given`/`When`/`Then`/`And`. Running
+`swift format lint` still reports disagreements about where to break
+multi-line call arguments — the pretty-printer's opinion, not a rule
+violation — so the config is a record of house style, not a gate. Nothing in
+CI runs it.
 
 **A privacy manifest, entirely empty.** `PrivacyInfo.xcprivacy` declares
 `NSPrivacyTracking = false` and three empty arrays. Empty is the *content*
@@ -460,6 +666,20 @@ fix in the view layer. Scoping to iPhone matches what the app actually is —
 and the now-unreachable `INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad`
 went with it, because a setting that can never apply is a claim, not a
 configuration.
+
+**Three app icons, and only one of them is opaque.** `AppIcon.appiconset`
+carries a 1024pt light icon plus `luminosity: dark` and `luminosity: tinted`
+variants. The light one is the primary icon and **must not** have an alpha
+channel — alpha in a primary icon is a submission error. The other two are the
+opposite: iOS supplies the background and composites the artwork over it, so
+they ship the magnifying glass on **transparency**, with no background plate
+of their own. The dark variant's gradient is lifted from the light icon's
+`#0B458A→#16A3A3` to `#2E7BD6→#2FD4D4`, because the system's backdrop is
+near-black and the darker blue would nearly disappear against it. The tinted
+variant is greyscale spanning white to mid-grey: the system maps *luminance*
+onto the user's chosen colour, so a flat grey glyph tints to a flat slab and a
+wide luminance range is what keeps the shape legible. Verifiable in one line —
+`sips -g hasAlpha Icon-*.png` — which is the point of writing it down.
 
 **No `DEVELOPMENT_TEAM`.** A personal Apple team ID is account-specific and
 belongs to a person, not a repository. With `CODE_SIGN_STYLE = Automatic`,

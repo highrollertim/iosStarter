@@ -3,12 +3,20 @@ import XCTest
 /// Smoke test: the app launches at all, on every UI-appearance configuration
 /// the suite runs under, and we keep a screenshot in the result bundle.
 ///
-/// Two independent multipliers apply here, and they are worth telling apart.
-/// `runsForEachTargetApplicationUIConfiguration` re-runs each test in light
-/// and dark appearance. The test plan's two *configurations* (English and
-/// German) re-run the whole suite in each language. So the screenshots in the
-/// result bundle cover both appearances in both languages — which is what
-/// makes this the app's localization smoke check as well as its launch one.
+/// Two independent multipliers apply here, and they are worth telling apart —
+/// the result bundle is confusing until you do.
+///
+/// `runsForEachTargetApplicationUIConfiguration` makes XCTest derive
+/// configurations from the *app*: the run is repeated across combinations of
+/// appearance, the app's supported localizations, and orientation. Measured,
+/// not assumed — the bundle labels them "Light Appearance, German, Portrait
+/// Upside Down" and the like, eight per run here.
+///
+/// The test plan's two *configurations* are a separate axis, and a stronger
+/// one: they relaunch the app under `de`/`DE` for real, which is what makes
+/// the German pass a localization check rather than a metadata permutation.
+/// So these screenshots span both, and this class is the app's launch smoke
+/// test and its most direct German one at the same time.
 final class LaunchTests: XCTestCase {
 
     override class var runsForEachTargetApplicationUIConfiguration: Bool {
