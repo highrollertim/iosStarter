@@ -15,14 +15,13 @@ final class AppDependencies {
     let searchViewModel: SearchViewModel
 
     init(processInfo: ProcessInfo = .processInfo) {
-        // Both test affordances live inside `#if DEBUG` together. Keeping
-        // `-UITestInMemoryStore` outside it — as this used to — meant a
-        // shipping build would throw away the user's entire favorites
-        // database if that argument ever reached it. Launch arguments are
-        // not a trusted channel: they can be set by a configuration profile,
-        // by an MDM-managed launch, or by anyone who can drive the app on a
-        // development device. A test hook that survives into Release is a
-        // shipped defect, not a convenience.
+        // Both test affordances live inside `#if DEBUG`, and both must.
+        // Launch arguments are not a trusted channel — a configuration
+        // profile, an MDM-managed launch, or anyone who can drive the app on
+        // a development device can set them — so a Release build that still
+        // honoured `-UITestInMemoryStore` would throw away the user's entire
+        // favorites database on request. A test hook that survives into
+        // Release is a shipped defect, not a convenience.
         let inMemory: Bool
         #if DEBUG
         if processInfo.arguments.contains("-UITestMockNetwork") {
@@ -46,13 +45,12 @@ final class AppDependencies {
     /// Builds the persistent container, degrading to an in-memory one rather
     /// than crashing.
     ///
-    /// The old version called `fatalError` here. That is the worst possible
-    /// response to the most likely real-world cause: a schema-migration
-    /// mismatch after an app update. The store on disk is from the previous
-    /// version, the new build can't open it, and every single launch dies in
-    /// the same place — an unbreakable crash loop that no user can escape and
-    /// no crash reporter can distinguish from a hard bug. Nothing the user
-    /// can do fixes it short of deleting the app.
+    /// `fatalError` is the worst available response to the most likely cause:
+    /// a schema-migration mismatch after an app update. The store on disk is
+    /// from the previous version, the new build can't open it, and every
+    /// launch dies in the same place — an unbreakable crash loop that no user
+    /// can escape short of deleting the app, and that no crash reporter can
+    /// distinguish from a hard bug.
     ///
     /// A degraded-but-running app beats a crash loop. Favorites are a
     /// convenience, not the product; a session with an empty favorites list

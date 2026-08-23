@@ -277,6 +277,42 @@ struct SearchViewModelTests {
         #expect(viewModel.now == stoppedNow)
     }
 
+    @Test("startTicker() twice leaks no second subscription")
+    func doubleStartTickerIsANoOp() async throws {
+        // `stopTicker()` releases *one* cancellable. If a second
+        // `startTicker()` had overwritten it with a second subscription, the
+        // first would still be running and `now` would keep advancing after
+        // the single stop below — which is precisely the leak the guard in
+        // `startTicker()` prevents.
+        let spy = SpyGitHubClient(result: .success(.fixture))
+        let viewModel = SearchViewModel(client: spy)
+
+        viewModel.startTicker()
+        viewModel.startTicker()
+
+        let seeded = viewModel.now
+        try await poll(until: { viewModel.now != seeded }, timeout: .seconds(4), message: "the ticker to advance")
+
+        viewModel.stopTicker()
+        let stopped = viewModel.now
+        try await Task.sleep(for: .milliseconds(1_500))
+        #expect(viewModel.now == stopped)
+    }
+
+    @Test("stopTicker() on a view model that never started is harmless")
+    func stopTickerWithoutStartDoesNotCrash() {
+        let spy = SpyGitHubClient(result: .success(.fixture))
+        let viewModel = SearchViewModel(client: spy)
+        let before = viewModel.now
+
+        // The view lifecycle can produce this: `.onDisappear` fires for a
+        // screen whose `.onAppear` never ran.
+        viewModel.stopTicker()
+        viewModel.stopTicker()
+
+        #expect(viewModel.now == before)
+    }
+
     @Test("refreshed description reports whole seconds, and inflects for one")
     func refreshedDescription() {
         let base = Date(timeIntervalSinceReferenceDate: 1_000)

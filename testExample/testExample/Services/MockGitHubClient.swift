@@ -9,9 +9,9 @@ import Foundation
 ///
 /// An `actor`, not a `struct`, because the interesting scenarios need to
 /// *remember* things across calls — `searchErrorOnce` fails the first search
-/// and succeeds afterwards, which requires a mutable call counter reachable
-/// from whatever executor the caller happens to be on. An actor is the
-/// default answer for that; a `struct` couldn't hold the counter at all and a
+/// for each query and succeeds afterwards, which requires mutable state
+/// reachable from whatever executor the caller happens to be on. An actor is
+/// the default answer for that; a `struct` couldn't hold it at all and a
 /// `final class` would need a lock and a `@unchecked Sendable` promise.
 actor MockGitHubClient: GitHubClient {
     /// Scenario names arrive from UI tests via the `UITEST_SCENARIO`
@@ -24,17 +24,24 @@ actor MockGitHubClient: GitHubClient {
         /// A successful search that simply matched nothing — the path to
         /// `ContentUnavailableView.search`, which no error scenario reaches.
         case emptyResults
-        /// Fails the first search, succeeds on every one after it. Exists so
-        /// a UI test can prove the Retry button actually *recovers*, not
-        /// merely that it exists.
+        /// Fails the first completed search *for each distinct query*, and
+        /// succeeds on every one after it. Exists so a UI test can prove the
+        /// Retry button actually *recovers*, not merely that it exists.
+        ///
+        /// Per query, not per client, because typing is a stream: searching
+        /// "swift" produces debounce emissions for prefixes too, and a slow
+        /// typist whose "s" completed before "swift" did would burn the one
+        /// failure on a query the test never asserts about — leaving "swift"
+        /// to succeed immediately and no error to retry. Keying on the query
+        /// makes the scenario independent of typing speed.
         case searchErrorOnce
     }
 
     let scenario: Scenario
 
-    /// Only `searchErrorOnce` reads this, but it is the reason this type is
-    /// an actor at all.
-    private var completedCalls = 0
+    /// Queries that have already been failed once by `searchErrorOnce`. Only
+    /// that scenario reads it, but it is the reason this type is an actor.
+    private var failedQueries: Set<String> = []
 
     init(scenario: Scenario = .success) {
         self.scenario = scenario
@@ -62,15 +69,9 @@ actor MockGitHubClient: GitHubClient {
         // the async path. It is deliberately *before* the scenario switch:
         // `Task.sleep` throws on cancellation, so a superseded call (the
         // debounce sink cancels the previous task on every keystroke) exits
-        // here and never touches the counter or the scenario. Cancellation
-        // is not one of the scenarios; it is the thing that happens instead
-        // of one.
+        // here and never records anything. Cancellation is not one of the
+        // scenarios; it is the thing that happens instead of one.
         try await Task.sleep(for: .milliseconds(300))
-
-        // Counted after the sleep so cancelled calls don't consume the
-        // "once" in `searchErrorOnce` — otherwise a fast typist could burn
-        // the failure on a request that never reached the UI.
-        completedCalls += 1
 
         switch scenario {
         case .success:
@@ -80,7 +81,9 @@ actor MockGitHubClient: GitHubClient {
         case .emptyResults:
             return []
         case .searchErrorOnce:
-            if completedCalls == 1 {
+            // Recorded after the sleep, so a cancelled call never spends this
+            // query's one failure on a request that no UI ever saw.
+            if failedQueries.insert(query).inserted {
                 throw GitHubClientError.rateLimited
             }
             return Self.fixtureRepos

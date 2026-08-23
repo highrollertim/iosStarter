@@ -9,15 +9,11 @@ import SwiftData
 struct FavoritesStore {
     let context: ModelContext
 
-    /// `throws` rather than swallowing with `try?`. The previous version read
-    /// `(try? existingFavorite(for: repo)) != nil`, which conflated two
-    /// genuinely different answers: "the fetch succeeded and found nothing"
-    /// and "the fetch itself failed". Both came back as `false`, so a broken
-    /// store looked exactly like an unfavorited repo. Propagating lets the
-    /// caller tell them apart — and it was worse than a lost distinction:
-    /// `try?` on `throws -> FavoriteRepo?` flattens to `FavoriteRepo?`, so a
-    /// *successful fetch returning nil* also produced `nil`, making the
-    /// comparison right only by accident.
+    /// `throws` rather than swallowing with `try?`, so "the fetch found
+    /// nothing" and "the fetch failed" stay distinguishable — collapsed into
+    /// one `false`, a broken store is indistinguishable from an unfavorited
+    /// repo. `try?` is doubly wrong here: on `throws -> FavoriteRepo?` it
+    /// flattens both a thrown error and a successful `nil` to the same `nil`.
     func isFavorite(_ repo: Repo) throws -> Bool {
         try existingFavorite(for: repo) != nil
     }

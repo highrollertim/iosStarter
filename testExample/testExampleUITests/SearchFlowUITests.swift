@@ -75,6 +75,11 @@ final class SearchFlowUITests: XCTestCase {
         // This one proves it works — which is the part that was broken:
         // `removeDuplicates()` used to swallow the re-submitted query, so a
         // failed search could not be repeated at all.
+        //
+        // `searchErrorOnce` fails the first completed search per *query*, so
+        // this scenario does not depend on typing speed: the prefix emissions
+        // that "swift" produces on the way in each get their own failure and
+        // cannot consume the one this test is waiting for.
         let app = XCUIApplication.launchedForUITest(scenario: "searchErrorOnce")
         let search = SearchScreen(app: app)
 

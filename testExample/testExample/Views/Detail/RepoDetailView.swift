@@ -113,10 +113,9 @@ struct RepoDetailView: View {
 }
 
 #if DEBUG
-#Preview {
+#Preview(traits: .sampleData) {
     NavigationStack {
         RepoDetailView(repo: MockGitHubClient.fixtureRepos[0])
     }
-    .modelContainer(previewContainer)
 }
 #endif

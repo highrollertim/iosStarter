@@ -31,8 +31,12 @@ struct RootView: View {
 }
 
 #if DEBUG
-#Preview {
-    RootView(searchViewModel: SearchViewModel(client: MockGitHubClient()))
-        .modelContainer(previewContainer)
+#Preview(traits: .sampleData) {
+    // Seeded with results, so the preview shows the tab bar over a populated
+    // screen rather than the idle prompt — a `#Preview` renders once and
+    // cannot wait out a search.
+    let viewModel = SearchViewModel(client: MockGitHubClient())
+    viewModel.setStateForPreviews(.loaded(MockGitHubClient.fixtureRepos, isRefreshing: false))
+    return RootView(searchViewModel: viewModel)
 }
 #endif

@@ -76,8 +76,8 @@ struct FavoritesStoreTests {
         #expect(try context.fetchCount(FetchDescriptor<FavoriteRepo>()) == 0)
     }
 
-    @Test("batch remove deletes every given favorite in one save")
-    func batchRemoveDeletesAll() throws {
+    @Test("batch remove deletes every given favorite and leaves nothing pending")
+    func batchRemoveDeletesAllAndCommits() throws {
         let context = try makeContext()
         let store = FavoritesStore(context: context)
         for id in 1...4 {
@@ -93,9 +93,13 @@ struct FavoritesStoreTests {
         let remaining = try context.fetch(FetchDescriptor<FavoriteRepo>())
         #expect(remaining.count == 1)
         #expect(remaining.first?.repoID == saved.last?.repoID)
-        // `hasChanges` false confirms the single `save()` inside `remove`
-        // actually committed all three deletions rather than leaving some
-        // pending in the context.
+        // `hasChanges == false` says the context has nothing left pending —
+        // all three deletions are committed. It does *not* say they were
+        // committed by one `save()`; a loop saving per row would end here
+        // too. Counting saves would need a seam in `FavoritesStore` that
+        // exists only for the test, and the property that matters to a caller
+        // is this one: after `remove` returns, nothing is left uncommitted.
+        // The single-save design is documented on `remove` and visible in it.
         #expect(!context.hasChanges)
     }
 

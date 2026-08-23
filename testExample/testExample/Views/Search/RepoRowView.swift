@@ -17,12 +17,18 @@ struct RepoRowView: View {
     /// renders around 3.9:1 against the default background. That is under
     /// AA's 4.5:1 for any text below 18pt, which is *all* of this row, and
     /// `performAccessibilityAudit()` flags it — see
-    /// `AccessibilityAuditUITests`. Deriving the de-emphasis from the primary
-    /// label colour instead keeps the hierarchy (visibly lighter than the
-    /// headline) while landing near 8:1 in both light and dark mode. The
-    /// lesson: the system's *aesthetic* defaults are not automatically its
-    /// *accessible* ones, and a semantic colour name is not a guarantee.
-    private static let deemphasized = Color.primary.opacity(0.65)
+    /// `AccessibilityAuditUITests`. The lesson: the system's *aesthetic*
+    /// defaults are not automatically its *accessible* ones, and a semantic
+    /// colour name is not a guarantee.
+    ///
+    /// An **asset colour**, not `Color.primary.opacity(0.65)`. A fixed alpha
+    /// is a claim about the background it will be composited over, so it is
+    /// only meaningful where that background has been measured — and it opts
+    /// the text out of Increase Contrast entirely, because there is nothing
+    /// for the system to substitute. `Deemphasized` names four measured
+    /// values instead: light, dark, and a high-contrast variant of each, so
+    /// a user who has asked for more contrast actually gets it.
+    private static let deemphasized = Color("Deemphasized")
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -49,9 +55,15 @@ struct RepoRowView: View {
             .foregroundStyle(Self.deemphasized)
         }
         .padding(.vertical, 2)
-        // Merge the row into one accessibility element with a sentence-shaped
-        // label, instead of making VoiceOver users step through four fragments.
-        .accessibilityElement(children: .combine)
+        // One accessibility element with a sentence-shaped label, instead of
+        // making VoiceOver users step through four fragments.
+        //
+        // `.ignore`, not `.combine`: the label below replaces the children's
+        // text completely, so merging their labels in only to overwrite them
+        // is wasted work — and `.combine` merges more than text. It absorbs
+        // the children's *traits and actions* too, which in a `List`'s edit
+        // mode swallowed the row's delete control into this element.
+        .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilityDescription)
     }
 

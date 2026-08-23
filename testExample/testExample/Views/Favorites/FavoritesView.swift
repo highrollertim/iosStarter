@@ -14,12 +14,11 @@ struct FavoritesView: View {
     var body: some View {
         NavigationStack {
             // Always the `List`, with the empty state as an *overlay* rather
-            // than an `if/else` sibling. Swapping between two different view
-            // types destroys the List and its rows' identity, so deleting the
-            // last favorite popped the row out with no animation and the
-            // empty state appeared with a jarring cut. Keeping one List for
-            // the view's whole lifetime lets SwiftUI animate the final row
-            // out while the overlay fades in.
+            // than an `if/else` sibling. Swapping between two view types
+            // destroys the List and its rows' identity, and a view with no
+            // identity cannot animate: the last row would cut rather than
+            // slide out. One List for the view's whole lifetime lets SwiftUI
+            // animate the final row away while the overlay fades in.
             List {
                 ForEach(favorites) { favorite in
                     NavigationLink(value: favorite.asRepo) {
@@ -72,8 +71,7 @@ struct FavoritesView: View {
 }
 
 #if DEBUG
-#Preview {
+#Preview(traits: .sampleData) {
     FavoritesView()
-        .modelContainer(previewContainer)
 }
 #endif

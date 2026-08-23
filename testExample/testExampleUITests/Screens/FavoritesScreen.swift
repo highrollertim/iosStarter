@@ -39,14 +39,17 @@ struct FavoritesScreen {
     /// Deletes a row through the `EditButton` affordance rather than a swipe:
     /// enter edit mode, tap the row's minus circle, confirm with Delete.
     ///
-    /// The minus circle is tapped via its own coordinate rather than
-    /// `row(for:).tap()` because `RepoRowView` merges itself into a single
-    /// accessibility element (`.accessibilityElement(children: .combine)`).
-    /// In edit mode that merged element covers the whole row — it reports as
-    /// one button labelled "Remove, apple/swift, …" — so tapping it hits the
-    /// row content, not the control. The minus circle is still present as its
-    /// own hittable image, identified by its SF Symbol name, and that is what
-    /// a sighted user's finger actually lands on.
+    /// The minus circle is matched as an *image* by its SF Symbol name and
+    /// tapped by coordinate, because that is what the element tree actually
+    /// contains: `List`'s edit-mode delete control is published as an
+    /// `Image` labelled "remove", not as a button, and it sits beside the row
+    /// element rather than inside it. Measured, not assumed — and re-measured
+    /// after `RepoRowView` moved from `.combine` to `.ignore`, which changed
+    /// nothing here: the control's representation is the `List`'s, not the
+    /// row's, so no accessibility choice in `RepoRowView` can promote it to a
+    /// button. `app.buttons` finds only the row itself, whose label edit mode
+    /// prefixes with "Remove, ", so tapping that opens the detail screen
+    /// instead of deleting.
     func deleteFirstRowInEditMode() {
         editButton.tap()
         let minusCircle = app.images["minus.circle.fill"].firstMatch

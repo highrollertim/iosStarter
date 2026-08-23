@@ -19,8 +19,10 @@ import Observation
 /// `on: .main` on the timer. Those two arguments are load-bearing: change
 /// either one to a background queue or runloop and the code still compiles
 /// clean, then traps at runtime on the main-actor precondition. Marking each
-/// closure `@MainActor` explicitly (below) is how we make the compiler check
-/// the assumption instead of merely inheriting it.
+/// closure `@MainActor` explicitly (below) is what inserts that *dynamic*
+/// check — nothing here is verified at compile time, and the trap is the
+/// point: a wrong scheduler fails loudly instead of quietly corrupting
+/// main-actor state.
 @Observable
 final class SearchViewModel {
 
@@ -284,9 +286,13 @@ final class SearchViewModel {
     /// Pure and static so the formatting logic is trivially unit-testable.
     nonisolated static func refreshedDescription(from lastRefreshed: Date?, now: Date) -> String? {
         guard let lastRefreshed else { return nil }
-        // `max(0, ...)` is belt and braces. Since `startTicker()` seeds `now`
-        // it should never fire, but a clamped 0 beats "Updated -1s ago" if
-        // the wall clock ever moves backwards under us.
+        // `max(0, ...)` does fire, and not only for a backwards wall clock.
+        // The first `body` evaluation happens before `.onAppear` runs
+        // `startTicker()`, so `now` is still whatever it was when this object
+        // was built — after a long stop that is behind `lastRefreshed`, and
+        // the interval is genuinely negative for that one frame. In steady
+        // state the clamp is invisible for a different reason: `Int`
+        // truncates toward zero, so sub-second lag lands on 0 anyway.
         let seconds = max(0, Int(now.timeIntervalSince(lastRefreshed)))
         // Spelled out ("42 seconds") rather than abbreviated ("42s") because
         // this string has plural variations in the catalog, and a language
@@ -298,6 +304,27 @@ final class SearchViewModel {
             comment: "Footer under the search results list, showing how long ago the results arrived. Has plural variations."
         )
     }
+
+    #if DEBUG
+    /// Places the view model directly in a given state, for previews.
+    ///
+    /// Every state below `.idle` is normally reachable only by running a
+    /// search against a client that behaves the right way — which previews
+    /// cannot do, because a `#Preview` renders once and does not wait out an
+    /// async round trip. Without this seam the "Results" and "Error" previews
+    /// both rendered the idle prompt: mislabelled, and dead as documentation.
+    ///
+    /// `#if DEBUG` because it is a testing affordance, not API: it is the one
+    /// way to write `state` from outside, and shipping it would undo the
+    /// `private(set)` that keeps `search(matching:)` the only writer.
+    func setStateForPreviews(_ state: LoadState<[Repo]>, lastCompletedQuery: String? = nil) {
+        self.state = state
+        self.lastCompletedQuery = lastCompletedQuery
+        if case .loaded = state {
+            lastRefreshed = .now
+        }
+    }
+    #endif
 
     private func userFacingMessage(for error: any Error) -> String {
         if let localized = (error as? LocalizedError)?.errorDescription {

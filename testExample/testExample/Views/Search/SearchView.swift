@@ -224,17 +224,55 @@ private struct LastRefreshedFooter: View {
 }
 
 #if DEBUG
-#Preview("Results") {
-    SearchView(viewModel: SearchViewModel(client: MockGitHubClient()))
-        // Without a container the preview traps the moment you tap a row:
-        // `RepoDetailView`'s `@Query` has no `modelContext` to resolve
-        // against. Previews of any view that can *navigate* to SwiftData
-        // need the environment the navigation destination expects.
-        .modelContainer(previewContainer)
+/// Builds a view model already in `state`, because a `#Preview` renders once
+/// and cannot wait out a search — a preview handed a mock client shows the
+/// idle prompt and nothing else. See `setStateForPreviews`.
+@MainActor
+private func previewViewModel(
+    _ state: LoadState<[Repo]>,
+    lastCompletedQuery: String? = nil
+) -> SearchViewModel {
+    let viewModel = SearchViewModel(client: MockGitHubClient())
+    viewModel.setStateForPreviews(state, lastCompletedQuery: lastCompletedQuery)
+    return viewModel
 }
 
-#Preview("Error") {
-    SearchView(viewModel: SearchViewModel(client: MockGitHubClient(scenario: .searchError)))
-        .modelContainer(previewContainer)
+// `traits: .sampleData` supplies the model container. Without one the preview
+// traps the moment you tap a row: `RepoDetailView`'s `@Query` has no
+// `modelContext` to resolve against. Any preview of a view that can
+// *navigate* to SwiftData needs the environment its destination expects.
+
+#Preview("Results", traits: .sampleData) {
+    SearchView(viewModel: previewViewModel(
+        .loaded(MockGitHubClient.fixtureRepos, isRefreshing: false)
+    ))
+}
+
+#Preview("Refreshing", traits: .sampleData) {
+    SearchView(viewModel: previewViewModel(
+        .loaded(MockGitHubClient.fixtureRepos, isRefreshing: true)
+    ))
+}
+
+#Preview("Empty", traits: .sampleData) {
+    SearchView(viewModel: previewViewModel(
+        .loaded([], isRefreshing: false),
+        lastCompletedQuery: "zzzz"
+    ))
+}
+
+#Preview("Error (first load)", traits: .sampleData) {
+    SearchView(viewModel: previewViewModel(
+        .failed(message: "GitHub is rate-limiting searches right now. Give it a minute.", stale: nil)
+    ))
+}
+
+#Preview("Error (stale kept)", traits: .sampleData) {
+    SearchView(viewModel: previewViewModel(
+        .failed(
+            message: "GitHub is rate-limiting searches right now. Give it a minute.",
+            stale: MockGitHubClient.fixtureRepos
+        )
+    ))
 }
 #endif
