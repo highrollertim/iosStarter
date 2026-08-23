@@ -13,8 +13,6 @@ struct RepoDetailView: View {
     @Environment(\.modelContext) private var modelContext
     @Query private var matches: [FavoriteRepo]
 
-    private static let logger = Logger(subsystem: "work.timmaher.testExample", category: "favorites")
-
     init(repo: Repo) {
         self.repo = repo
         // A @Query built in init — filtered to this repo — so favorite state
@@ -42,24 +40,47 @@ struct RepoDetailView: View {
                 }
                 LabeledContent("Owner", value: repo.ownerLogin)
             }
-            Section {
-                Link("View on GitHub", destination: repo.htmlURL)
-                    .accessibilityIdentifier("detail.githubLink")
+            // `htmlURL` is decoded straight from a network payload, so its
+            // scheme is whatever the server said — `Link` would happily hand
+            // a `javascript:` or custom-scheme URL to `openURL`. Render the
+            // link only for schemes we actually meant to support.
+            if isWebLink {
+                Section {
+                    Link("View on GitHub", destination: repo.htmlURL)
+                        .accessibilityIdentifier("detail.githubLink")
+                }
             }
         }
         .navigationTitle(repo.fullName)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
-                Button {
-                    toggleFavorite()
-                } label: {
-                    Image(systemName: isFavorite ? "star.fill" : "star")
+                // The title *is* the accessibility label — a separate
+                // `.accessibilityLabel` would only be a second copy to keep
+                // in sync. `.labelStyle(.iconOnly)` hides the text visually
+                // without hiding it from assistive technology, which is
+                // exactly the trade a bare `Image` gets wrong.
+                Button(
+                    isFavorite ? "Remove from Favorites" : "Add to Favorites",
+                    systemImage: isFavorite ? "star.fill" : "star"
+                ) {
+                    withAnimation { toggleFavorite() }
                 }
-                .accessibilityLabel(isFavorite ? "Remove from favorites" : "Add to favorites")
+                .labelStyle(.iconOnly)
+                // Cross-fades star ↔ star.fill as one symbol changing state
+                // rather than one view being replaced by another.
+                .contentTransition(.symbolEffect(.replace))
+                .sensoryFeedback(.success, trigger: isFavorite)
+                // VoiceOver announces "selected" for a favorited repo, so the
+                // state is audible and not only in the changed label.
+                .accessibilityAddTraits(isFavorite ? [.isSelected] : [])
                 .accessibilityIdentifier("detail.favoriteButton")
             }
         }
+    }
+
+    private var isWebLink: Bool {
+        repo.htmlURL.scheme == "https" || repo.htmlURL.scheme == "http"
     }
 
     private func toggleFavorite() {
@@ -68,7 +89,7 @@ struct RepoDetailView: View {
         } catch {
             // A local-store write failing is exceptional; log rather than
             // interrupt. (A data-critical app would surface an alert here.)
-            Self.logger.error("Failed to toggle favorite: \(error)")
+            Logger.favorites.error("Failed to toggle favorite: \(error)")
         }
     }
 }

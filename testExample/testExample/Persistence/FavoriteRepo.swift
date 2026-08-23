@@ -9,8 +9,20 @@ import SwiftData
 /// `init(repo:)` are the two conversion seams.
 @Model
 final class FavoriteRepo {
-    /// `.unique` makes SwiftData upsert on conflict — favoriting the same
-    /// repo twice can never create duplicates.
+    /// `.unique` is a *store-level constraint*: it tells SwiftData that no
+    /// two rows may share a `repoID`, and the store enforces that at save
+    /// time. It is a safety net, not this app's deduplication strategy.
+    ///
+    /// The dedup the app actually relies on is the fetch-then-branch in
+    /// `FavoritesStore.existingFavorite(for:)` — we look the repo up and
+    /// decide to insert or delete *before* touching the context, so the
+    /// constraint is never the thing standing between the user and a
+    /// duplicate. That ordering matters: leaning on the constraint would mean
+    /// leaning on whatever conflict resolution the store happens to perform,
+    /// which is a persistence-layer implementation detail rather than a
+    /// documented API guarantee. See `FavoritesStoreTests` for a test that
+    /// pins down what a same-`repoID` insert actually does here, precisely
+    /// because it is behaviour worth observing rather than assuming.
     @Attribute(.unique) var repoID: Int
     var fullName: String
     var ownerLogin: String

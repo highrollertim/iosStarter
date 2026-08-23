@@ -9,11 +9,17 @@ import SwiftData
 struct FavoritesStore {
     let context: ModelContext
 
-    func isFavorite(_ repo: Repo) -> Bool {
-        // `try?` on a `throws -> FavoriteRepo?` already flattens to
-        // `FavoriteRepo??` and SE-0230 collapses that to `FavoriteRepo?` —
-        // no `?? nil` needed to get there.
-        (try? existingFavorite(for: repo)) != nil
+    /// `throws` rather than swallowing with `try?`. The previous version read
+    /// `(try? existingFavorite(for: repo)) != nil`, which conflated two
+    /// genuinely different answers: "the fetch succeeded and found nothing"
+    /// and "the fetch itself failed". Both came back as `false`, so a broken
+    /// store looked exactly like an unfavorited repo. Propagating lets the
+    /// caller tell them apart — and it was worse than a lost distinction:
+    /// `try?` on `throws -> FavoriteRepo?` flattens to `FavoriteRepo?`, so a
+    /// *successful fetch returning nil* also produced `nil`, making the
+    /// comparison right only by accident.
+    func isFavorite(_ repo: Repo) throws -> Bool {
+        try existingFavorite(for: repo) != nil
     }
 
     /// Favorite if absent, unfavorite if present.
@@ -26,9 +32,23 @@ struct FavoritesStore {
         try context.save()
     }
 
-    func remove(_ favorite: FavoriteRepo) throws {
-        context.delete(favorite)
+    /// Deletes many favorites with a single `save()`.
+    ///
+    /// The unit of work is the user's action, not the row: deleting three
+    /// rows in one swipe of the Edit UI is one undoable thing that either
+    /// happens or doesn't. Saving per row would also fan out one change
+    /// notification per row, rebuilding every `@Query` that many times.
+    func remove(_ favorites: some Sequence<FavoriteRepo>) throws {
+        for favorite in favorites {
+            context.delete(favorite)
+        }
         try context.save()
+    }
+
+    /// Single-item convenience. Delegates so there is exactly one delete-and-
+    /// save path to reason about.
+    func remove(_ favorite: FavoriteRepo) throws {
+        try remove(CollectionOfOne(favorite))
     }
 
     private func existingFavorite(for repo: Repo) throws -> FavoriteRepo? {

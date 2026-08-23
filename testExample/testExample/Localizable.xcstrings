@@ -1,37 +1,127 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
-    "Search GitHub" : {},
-    "Find repositories by name, topic, or language." : {},
-    "Search GitHub repositories" : {},
-    "Searching…" : {},
-    "Something went wrong" : {},
-    "Retry" : {},
-    "RepoScout" : {},
-    "Search" : {},
-    "Favorites" : {},
-    "No favorites yet" : {},
-    "Repositories you favorite will appear here." : {},
-    "About" : {},
-    "Stats" : {},
-    "Stars" : {},
-    "Forks" : {},
-    "Language" : {},
-    "Owner" : {},
-    "View on GitHub" : {},
-    "Add to favorites" : {},
-    "Remove from favorites" : {},
-    "That search can't be sent. Try different text." : {},
-    "Couldn't reach GitHub. Check your connection and try again." : {},
-    "GitHub is rate-limiting searches right now. Give it a minute." : {},
-    "GitHub had a problem (HTTP %lld). Try again shortly." : {},
-    "GitHub sent a response this app couldn't read." : {},
-    "Something went wrong. Please try again." : {},
-    "Updated %llds ago" : {},
-    "%@, %lld stars, written in %@. %@" : {},
-    "%@, %lld stars, written in %@." : {},
-    "%@, %lld stars. %@" : {},
-    "%@, %lld stars." : {}
+    "%@, %@ stars, written in %@." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@, %2$@ stars, written in %3$@."
+          }
+        }
+      }
+    },
+    "%@, %@ stars, written in %@. %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@, %2$@ stars, written in %3$@. %4$@"
+          }
+        }
+      }
+    },
+    "%@, %@ stars." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@, %2$@ stars."
+          }
+        }
+      }
+    },
+    "%@, %@ stars. %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@, %2$@ stars. %3$@"
+          }
+        }
+      }
+    },
+    "About" : {
+
+    },
+    "Add to Favorites" : {
+
+    },
+    "Couldn't reach GitHub. Check your connection and try again." : {
+
+    },
+    "Favorites" : {
+
+    },
+    "Find repositories by name, topic, or language." : {
+
+    },
+    "Forks" : {
+
+    },
+    "GitHub had a problem (HTTP %lld). Try again shortly." : {
+
+    },
+    "GitHub is rate-limiting searches right now. Give it a minute." : {
+
+    },
+    "GitHub sent a response this app couldn't read." : {
+
+    },
+    "Language" : {
+
+    },
+    "No favorites yet" : {
+
+    },
+    "Owner" : {
+
+    },
+    "Remove from Favorites" : {
+
+    },
+    "RepoScout" : {
+
+    },
+    "Repositories you favorite will appear here." : {
+
+    },
+    "Retry" : {
+
+    },
+    "Search" : {
+
+    },
+    "Search GitHub" : {
+
+    },
+    "Search GitHub repositories" : {
+
+    },
+    "Searching…" : {
+
+    },
+    "Something went wrong" : {
+
+    },
+    "Something went wrong. Please try again." : {
+
+    },
+    "Stars" : {
+
+    },
+    "Stats" : {
+
+    },
+    "That search can't be sent. Try different text." : {
+
+    },
+    "Updated %llds ago" : {
+
+    },
+    "View on GitHub" : {
+
+    }
   },
   "version" : "1.0"
 }
