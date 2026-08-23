@@ -4,6 +4,13 @@ DerivedData/
 *.xcuserstate
 xcuserdata/
 *.moved-aside
+# ...but xcshareddata is the *other* half of that directory pair, and it must
+# stay tracked. Xcode autocreates a per-user scheme under xcuserdata/ the
+# first time you open a project, which works fine locally and then vanishes
+# on a fresh clone — that is why `xcodebuild -scheme testExample` used to fail
+# for everyone but the original author. The shared scheme lives in
+# testExample.xcodeproj/xcshareddata/xcschemes/ and is committed deliberately.
+!*.xcodeproj/xcshareddata/
 *.pbxuser
 !default.pbxuser
 *.mode1v3
