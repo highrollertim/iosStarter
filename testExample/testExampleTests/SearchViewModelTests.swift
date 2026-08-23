@@ -9,11 +9,17 @@ import Testing
 struct SearchViewModelTests {
 
     /// A debounce long enough that the Combine pipeline provably cannot fire
-    /// during a test. Used by the tests that drive `search`/`retry` directly
+    /// during a test. Used by the tests that drive `dispatch`/`retry` directly
     /// and only set `searchText` so `retry()` has something to re-run —
     /// without it, `searchText`'s `didSet` would race a second, unwanted
     /// request into the assertions.
     private static let neverFires: DispatchQueue.SchedulerTimeType.Stride = .seconds(30)
+
+    // `dispatch(_:)` rather than the private `search(matching:)`: it is the
+    // only route into a search in production, and it hands back the `Task` it
+    // stored, so `await …value` makes these tests deterministic without a
+    // sleep. Driving the real funnel also means the dedup bookkeeping under
+    // test is the bookkeeping the app performs.
 
     @Test("successful search moves loading → loaded")
     func successMovesThroughLoadingToLoaded() async throws {
@@ -21,7 +27,7 @@ struct SearchViewModelTests {
         let viewModel = SearchViewModel(client: gate)
         #expect(viewModel.state == .idle)
 
-        let search = Task { await viewModel.search(matching: "swift") }
+        let search = viewModel.dispatch("swift")
         try await poll(until: { viewModel.state == .loading }, message: "state == .loading")
         await gate.open()
         await search.value
@@ -35,7 +41,7 @@ struct SearchViewModelTests {
         let spy = SpyGitHubClient(result: .failure(.rateLimited))
         let viewModel = SearchViewModel(client: spy)
 
-        await viewModel.search(matching: "swift")
+        await viewModel.dispatch("swift").value
 
         #expect(viewModel.state == .failed(message: GitHubClientError.rateLimited.errorDescription ?? ""))
     }
@@ -45,7 +51,7 @@ struct SearchViewModelTests {
         let spy = SpyGitHubClient(result: .success(.fixture))
         let viewModel = SearchViewModel(client: spy)
 
-        await viewModel.search(matching: query)
+        await viewModel.dispatch(query).value
 
         #expect(viewModel.state == .idle)
         #expect(await spy.queries.isEmpty)
@@ -62,14 +68,14 @@ struct SearchViewModelTests {
         let viewModel = SearchViewModel(client: client)
 
         await client.open("swif")
-        await viewModel.search(matching: "swif")
+        await viewModel.dispatch("swif").value
         #expect(viewModel.state == .loaded(staleResult, isRefreshing: false))
 
         // The refinement is in flight. This is the state a four-case
         // `LoadState` cannot express: the previous query's rows are still the
         // right thing to show, and blanking them to a spinner on every
         // keystroke is the bug `isRefreshing` exists to prevent.
-        let refinement = Task { await viewModel.search(matching: "swift") }
+        let refinement = viewModel.dispatch("swift")
         try await poll(until: { await client.isPending("swift") }, message: "refinement in flight")
         #expect(viewModel.state == .loaded(staleResult, isRefreshing: true))
 
@@ -89,19 +95,18 @@ struct SearchViewModelTests {
         let client = KeyedGatedGitHubClient(repos: ["first": staleResult, "second": freshResult])
         let viewModel = SearchViewModel(client: client)
 
-        // Drives cancellation the way the production debounce sink does
-        // (`searchTask?.cancel()` followed by starting a Task for the
-        // latest query — see `SearchViewModel.init`'s `querySubject` sink).
-        // Exercised directly here, rather than through Combine's
-        // time-based debounce, so the test is deterministic.
-        let firstSearch = Task { await viewModel.search(matching: "first") }
+        // The production funnel, not a hand-rolled imitation of it: the
+        // second `dispatch` is what cancels the first search, exactly as the
+        // debounce sink's next emission would. Driven through `dispatch`
+        // rather than Combine's time-based debounce only so the ordering is
+        // deterministic.
+        let firstSearch = viewModel.dispatch("first")
         try await poll(until: { await client.isPending("first") }, message: "\"first\" request in flight")
-        firstSearch.cancel()
 
         // Arm "second" to resolve the instant its call arrives, then run it
         // to completion — this is the search that should win.
         await client.open("second")
-        let secondSearch = Task { await viewModel.search(matching: "second") }
+        let secondSearch = viewModel.dispatch("second")
         await secondSearch.value
 
         #expect(viewModel.state == .loaded(freshResult, isRefreshing: false))
@@ -164,7 +169,7 @@ struct SearchViewModelTests {
         let client = UncancellableGatedGitHubClient(repos: staleResult)
         let viewModel = SearchViewModel(client: client)
 
-        let search = Task { await viewModel.search(matching: "late") }
+        let search = viewModel.dispatch("late")
         try await poll(until: { await client.isPending }, message: "request in flight")
         #expect(viewModel.state == .loading)
 
@@ -291,7 +296,7 @@ struct SearchViewModelTests {
         let viewModel = SearchViewModel(client: client, debounceInterval: Self.neverFires)
         viewModel.searchText = "swift"
 
-        await viewModel.search(matching: "swift")
+        await viewModel.dispatch("swift").value
         #expect(viewModel.state == .failed(message: GitHubClientError.rateLimited.errorDescription ?? ""))
 
         viewModel.retry()
@@ -312,7 +317,7 @@ struct SearchViewModelTests {
         let viewModel = SearchViewModel(client: client, debounceInterval: Self.neverFires)
         viewModel.searchText = "swift"
 
-        await viewModel.search(matching: "swift")
+        await viewModel.dispatch("swift").value
         #expect(viewModel.state == .failed(message: GitHubClientError.rateLimited.errorDescription ?? ""))
 
         viewModel.searchText = ""
@@ -340,6 +345,43 @@ struct SearchViewModelTests {
         // out and confirm the filter dropped it instead of firing a second
         // identical request.
         try await Task.sleep(for: .milliseconds(400))
+        #expect(await spy.queries == ["swift"])
+    }
+
+    @Test("retry() suppresses the debounce emission that follows it")
+    func retryDedupesTheFollowingEmission() async throws {
+        let spy = SpyGitHubClient(result: .success(.fixture))
+        let viewModel = SearchViewModel(client: spy, debounceInterval: .milliseconds(50))
+
+        viewModel.searchText = "swift"
+        try await poll(until: { viewModel.state == .loaded(.fixture, isRefreshing: false) }, message: "first load")
+
+        // Retry, then an identical keystroke inside the debounce window — the
+        // shape a user produces by tapping Retry and touching the field. Retry
+        // goes through `dispatch(_:)`, which writes the key before the request
+        // leaves, so the emission that lands 50ms later is filtered rather
+        // than racing a duplicate request onto the wire.
+        viewModel.retry()
+        viewModel.searchText = "swift"
+
+        try await Task.sleep(for: .milliseconds(300))
+        #expect(await spy.queries == ["swift", "swift"])
+    }
+
+    @Test("a trailing space is not a new query")
+    func trailingWhitespaceDoesNotRefire() async throws {
+        // The dedup key and the request it stands for must be the same
+        // string. Keying on the raw field text let "swift " past a key of
+        // "swift" and fired a second, identical request — the user added a
+        // space and paid for a whole round trip.
+        let spy = SpyGitHubClient(result: .success(.fixture))
+        let viewModel = SearchViewModel(client: spy, debounceInterval: .milliseconds(50))
+
+        viewModel.searchText = "swift"
+        try await poll(until: { viewModel.state == .loaded(.fixture, isRefreshing: false) }, message: "first load")
+
+        viewModel.searchText = "swift "
+        try await Task.sleep(for: .milliseconds(300))
         #expect(await spy.queries == ["swift"])
     }
 }

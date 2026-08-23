@@ -58,6 +58,12 @@ struct SearchView: View {
                 .accessibilityIdentifier("search.row.\(repo.fullName)")
             }
             .accessibilityIdentifier("search.list")
+            // Stale-while-revalidate with no way to ask for a revalidation is
+            // half a design: results can go quietly out of date and the only
+            // cure is editing the query. `dispatch(_:)` is what makes this
+            // safe to expose — the pull cancels any in-flight search and
+            // becomes the one that owns the screen.
+            .refreshable { await viewModel.dispatch(viewModel.searchText).value }
             .safeAreaInset(edge: .bottom) {
                 LastRefreshedFooter(viewModel: viewModel, isRefreshing: isRefreshing)
             }

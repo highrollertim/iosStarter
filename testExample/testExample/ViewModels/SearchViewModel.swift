@@ -39,11 +39,19 @@ final class SearchViewModel {
     private let client: any GitHubClient
     private let querySubject = PassthroughSubject<String, Never>()
     private var cancellables = Set<AnyCancellable>()
+    /// The one in-flight search. `dispatch(_:)` is the only writer, which is
+    /// what makes "cancel the previous search" a complete statement rather
+    /// than a hope — there is no route to `search(matching:)` that leaves a
+    /// task nobody holds.
     private var searchTask: Task<Void, Never>?
-    /// The query most recently handed to `search(matching:)`, by *any* route —
-    /// the debounce sink, `retry()`, or `submitImmediately()`. It is the
-    /// pipeline's deduplication key; see the `filter` in `init` for why this
-    /// replaced `removeDuplicates()`.
+    /// The trimmed query most recently dispatched. It is the pipeline's
+    /// deduplication key; see the `filter` in `init` for why this replaced
+    /// `removeDuplicates()`.
+    ///
+    /// Trimmed, and compared against a trimmed candidate, so the key and the
+    /// request it stands for are the same string: keying on the raw text
+    /// would let "swift " past a key of "swift" and fire a second identical
+    /// request for a query the user only refined by a space.
     private var lastDispatchedQuery: String?
     /// Owns the "updated N seconds ago" ticker's sink, separately from
     /// `cancellables`, so `stopTicker()` can tear down just this one
@@ -85,12 +93,14 @@ final class SearchViewModel {
             // The `@MainActor` annotations on them are assertions about this
             // argument, not substitutes for it.
             .debounce(for: debounceInterval, scheduler: DispatchQueue.main)
-            .filter { @MainActor [weak self] query in query != self?.lastDispatchedQuery }
+            .filter { @MainActor [weak self] query in
+                // Trimmed on both sides: `lastDispatchedQuery` holds the
+                // trimmed text, so the candidate has to be trimmed too or a
+                // trailing space reads as a different query.
+                query.trimmingCharacters(in: .whitespacesAndNewlines) != self?.lastDispatchedQuery
+            }
             .sink { @MainActor [weak self] query in
-                guard let self else { return }
-                lastDispatchedQuery = query
-                searchTask?.cancel()
-                searchTask = Task { await self.search(matching: query) }
+                self?.dispatch(query)
             }
             .store(in: &cancellables)
     }
@@ -137,16 +147,44 @@ final class SearchViewModel {
         tickerCancellable = nil
     }
 
-    /// The single path from "query" to "state". Also called directly by the
-    /// retry button and by unit tests — the debounce pipeline is just one
-    /// caller among several.
-    func search(matching query: String) async {
+    /// The one way to start a search. Every route in — the debounce sink,
+    /// `submitImmediately()`, `retry()`, pull-to-refresh — goes through here.
+    ///
+    /// Funnelling them is what makes the two invariants below true rather
+    /// than merely usual:
+    ///
+    /// - **Every in-flight search *is* `searchTask`.** A caller that started
+    ///   its own `Task` would be invisible to the cancellation on the next
+    ///   line, and the "newest search wins" design rests on that cancellation.
+    /// - **The dedup key always describes the search that is actually
+    ///   running.** Recording it here, before the work begins, is what stops
+    ///   a debounce emission already in flight from firing the same query a
+    ///   second time when it lands.
+    ///
+    /// Returns the task so callers who need to wait — `.refreshable`, unit
+    /// tests — can, without having to reach for `searchTask` themselves.
+    @discardableResult
+    func dispatch(_ query: String) -> Task<Void, Never> {
+        lastDispatchedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        searchTask?.cancel()
+        let task = Task { await self.search(matching: query) }
+        searchTask = task
+        return task
+    }
+
+    /// The single path from "query" to "state". Private: reaching it without
+    /// going through `dispatch(_:)` would break both of that method's
+    /// invariants.
+    private func search(matching query: String) async {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
             state = .idle
-            // Clearing the dedup key here means clearing the field and
-            // retyping the same query searches again, rather than being
-            // silently swallowed as a duplicate.
+            // Belt and braces for any future caller that reaches this method
+            // without going through `dispatch(_:)`. It is not what makes
+            // retyping a cleared field work: `dispatch(_:)` writes the key
+            // before this runs, and a blank query trims to "", so clearing
+            // the field and retyping the same text is already two different
+            // keys as far as the `filter` is concerned.
             lastDispatchedQuery = nil
             return
         }
@@ -202,13 +240,11 @@ final class SearchViewModel {
     ///
     /// Bound to `.onSubmit(of: .search)`: once the user has pressed Return
     /// they have told us the query is finished, so making them wait out a
-    /// 300ms debounce is pure latency. Recording `lastDispatchedQuery` before
-    /// dispatching is what stops the debounce emission that is *already* in
-    /// flight from firing the same search a second time when it lands.
+    /// 300ms debounce is pure latency. The debounce emission that is
+    /// *already* in flight is dropped when it lands, because `dispatch(_:)`
+    /// has recorded its query as the dedup key by then.
     func submitImmediately() {
-        lastDispatchedQuery = searchText
-        searchTask?.cancel()
-        searchTask = Task { [searchText] in await self.search(matching: searchText) }
+        dispatch(searchText)
     }
 
     /// Re-runs the current query after a failure. Identical to a manual
