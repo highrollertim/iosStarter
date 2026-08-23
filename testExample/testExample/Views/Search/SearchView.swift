@@ -93,20 +93,36 @@ struct SearchView: View {
             // on this app-lifetime view model would be wrong.
             .onAppear { viewModel.startTicker() }
             .onDisappear { viewModel.stopTicker() }
-        case .failed(let message):
+        case .failed(let message, let stale?) where !stale.isEmpty:
+            // A refinement failed with results still on screen. Those results
+            // are the best thing anyone has, so the failure gets a bar rather
+            // than the whole window. Same two identifiers as the full-screen
+            // branch below — only one of the two ever renders, so UI tests
+            // find exactly one of each either way.
+            List(stale) { repo in
+                NavigationLink(value: repo) {
+                    RepoRowView(repo: repo)
+                }
+                .accessibilityIdentifier("search.row.\(repo.fullName)")
+            }
+            .accessibilityIdentifier("search.list")
+            .safeAreaBar(edge: .bottom) {
+                ErrorBanner(message: message) { viewModel.retry() }
+            }
+        case .failed(let message, _):
+            // Nothing to keep: a first load failed, or the last thing that
+            // succeeded had no results to preserve.
             ContentUnavailableView {
                 Label("Something went wrong", systemImage: "exclamationmark.triangle")
             } description: {
+                // The identifier goes on the description `Text`, never on the
+                // `ContentUnavailableView`: a container-level identifier is
+                // re-parented onto every child the view merges, clobbering
+                // "search.retryButton" below. Identifying the one leaf that is
+                // genuinely the error message also gives UI tests something
+                // locale-independent to match, which the literal English
+                // "Something went wrong" was not.
                 Text(message)
-                    // On the *description*, not on the ContentUnavailableView:
-                    // a container-level identifier here gets re-parented onto
-                    // every child the view merges, which is what was clobbering
-                    // "search.retryButton" below. Identifying the one leaf that
-                    // is genuinely the error message gives UI tests something
-                    // locale-independent to assert on — the previous query
-                    // matched the literal English "Something went wrong", and
-                    // stopped matching the moment the app grew a second
-                    // language.
                     .accessibilityIdentifier("search.errorView")
             } actions: {
                 Button("Retry") {
@@ -115,12 +131,31 @@ struct SearchView: View {
                 .buttonStyle(.borderedProminent)
                 .accessibilityIdentifier("search.retryButton")
             }
-            // No container-level accessibility identifier here: ContentUnavailableView
-            // re-parents a container identifier onto its merged children, which was
-            // clobbering "search.retryButton" on the Retry button below. The error
-            // state is identified honestly instead — by its visible text — in the UI
-            // tests (see SearchScreen.errorView).
         }
+    }
+}
+
+/// The compact failure presentation: a bar under results that are still
+/// worth reading.
+///
+/// Carries the same identifiers as the full-screen error state, because it is
+/// the same two things — the message and the way out — at a different size.
+private struct ErrorBanner: View {
+    let message: String
+    let retry: () -> Void
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Text(message)
+                .font(.footnote)
+                .accessibilityIdentifier("search.errorView")
+            Spacer(minLength: 0)
+            Button("Retry", action: retry)
+                .buttonStyle(.bordered)
+                .accessibilityIdentifier("search.retryButton")
+        }
+        .padding(.horizontal)
+        .padding(.vertical, 8)
     }
 }
 

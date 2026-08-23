@@ -212,6 +212,14 @@ final class SearchViewModel {
             state = .loading
         }
 
+        // What is on screen right now, named once, before anything suspends.
+        // The `catch` below runs after an `await`, so reading `state` there
+        // would only be sound on the strength of the cancellation guard — the
+        // argument that no other search can have written to `state` meanwhile.
+        // Capturing here means the failure path does not need that argument:
+        // it restores the results this search was refining, by construction.
+        let staleResults: [Repo]? = if case .loaded(let existing, _) = state { existing } else { nil }
+
         do {
             let repos = try await client.searchRepositories(matching: trimmed)
             // INVARIANT: this check cannot go stale. `self` is `@MainActor`,
@@ -244,7 +252,10 @@ final class SearchViewModel {
             // A failed query is repeatable — forget that we dispatched it so
             // the `filter` in `init` lets the identical text through again.
             lastDispatchedQuery = nil
-            state = .failed(message: userFacingMessage(for: error))
+            // Results already on screen survive the failure. Blanking them
+            // would punish the user for a refinement that failed by throwing
+            // away the last thing that worked.
+            state = .failed(message: userFacingMessage(for: error), stale: staleResults)
         }
     }
 

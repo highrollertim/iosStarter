@@ -43,7 +43,7 @@ struct SearchViewModelTests {
 
         await viewModel.dispatch("swift").value
 
-        #expect(viewModel.state == .failed(message: GitHubClientError.rateLimited.errorDescription ?? ""))
+        #expect(viewModel.state == .failed(message: GitHubClientError.rateLimited.errorDescription ?? "", stale: nil))
     }
 
     @Test("blank queries reset to idle without hitting the network", arguments: ["", "   ", "\n"])
@@ -104,6 +104,41 @@ struct SearchViewModelTests {
         #expect(viewModel.state == .loaded([], isRefreshing: false))
         // Trimmed, because that is the query that was actually sent.
         #expect(viewModel.lastCompletedQuery == "swiftzzz")
+    }
+
+    @Test("a failed refinement keeps the results it was refining")
+    func failedRefinementKeepsStaleResults() async throws {
+        // Blanking the screen on a failed refinement throws away the last
+        // thing that worked. The failure is real and gets said out loud —
+        // but over the results, not instead of them.
+        let client = ScriptedGitHubClient(
+            script: [.success(.fixture), .failure(.rateLimited)]
+        )
+        let viewModel = SearchViewModel(client: client, debounceInterval: Self.neverFires)
+
+        await viewModel.dispatch("swift").value
+        #expect(viewModel.state == .loaded(.fixture, isRefreshing: false))
+
+        await viewModel.dispatch("swiftui").value
+        #expect(viewModel.state == .failed(
+            message: GitHubClientError.rateLimited.errorDescription ?? "",
+            stale: .fixture
+        ))
+    }
+
+    @Test("a first-load failure has nothing to keep")
+    func firstLoadFailureCarriesNoStaleResults() async throws {
+        // The other half of the same rule, and what selects the full-screen
+        // error presentation in `SearchView`.
+        let spy = SpyGitHubClient(result: .failure(.network))
+        let viewModel = SearchViewModel(client: spy, debounceInterval: Self.neverFires)
+
+        await viewModel.dispatch("swift").value
+
+        #expect(viewModel.state == .failed(
+            message: GitHubClientError.network.errorDescription ?? "",
+            stale: nil
+        ))
     }
 
     @Test("a cancelled search cannot clobber a newer search's result")
@@ -298,7 +333,7 @@ struct SearchViewModelTests {
 
         viewModel.searchText = "swift"
         try await poll(
-            until: { viewModel.state == .failed(message: GitHubClientError.rateLimited.errorDescription ?? "") },
+            until: { viewModel.state == .failed(message: GitHubClientError.rateLimited.errorDescription ?? "", stale: nil) },
             message: "first attempt to fail"
         )
 
@@ -319,7 +354,7 @@ struct SearchViewModelTests {
         viewModel.searchText = "swift"
 
         await viewModel.dispatch("swift").value
-        #expect(viewModel.state == .failed(message: GitHubClientError.rateLimited.errorDescription ?? ""))
+        #expect(viewModel.state == .failed(message: GitHubClientError.rateLimited.errorDescription ?? "", stale: nil))
 
         viewModel.retry()
         try await poll(
@@ -340,7 +375,7 @@ struct SearchViewModelTests {
         viewModel.searchText = "swift"
 
         await viewModel.dispatch("swift").value
-        #expect(viewModel.state == .failed(message: GitHubClientError.rateLimited.errorDescription ?? ""))
+        #expect(viewModel.state == .failed(message: GitHubClientError.rateLimited.errorDescription ?? "", stale: nil))
 
         viewModel.searchText = ""
         viewModel.retry()
