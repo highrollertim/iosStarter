@@ -1,3 +1,9 @@
+> **Archived — point-in-time planning artifact from the initial build
+> (2026-08-22).** Superseded by the code and `ARCHITECTURE.md`. Code
+> listings herein predate later fix waves and **MUST NOT** be used as
+> reference — in particular the init-started ticker shown here was later
+> identified as a bug. Kept only as a record of how the app was planned.
+
 # RepoScout Reference App Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
