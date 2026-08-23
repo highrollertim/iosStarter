@@ -84,6 +84,28 @@ struct SearchViewModelTests {
         #expect(viewModel.state == .loaded(.fixture, isRefreshing: false))
     }
 
+    @Test("an empty refinement reports the query that produced it")
+    func emptyRefinementRecordsItsQuery() async throws {
+        // The state hole this closes: results on screen, the user refines,
+        // and the refinement matches nothing. The empty screen has to say
+        // "No Results for <the refining query>" — and it cannot ask
+        // `searchText`, which is the live, un-debounced field.
+        let client = KeyedGatedGitHubClient(repos: ["swift": .fixture, "swiftzzz": []])
+        let viewModel = SearchViewModel(client: client, debounceInterval: Self.neverFires)
+
+        await client.open("swift")
+        await viewModel.dispatch("swift").value
+        #expect(viewModel.state == .loaded(.fixture, isRefreshing: false))
+        #expect(viewModel.lastCompletedQuery == "swift")
+
+        await client.open("swiftzzz")
+        await viewModel.dispatch("  swiftzzz  ").value
+
+        #expect(viewModel.state == .loaded([], isRefreshing: false))
+        // Trimmed, because that is the query that was actually sent.
+        #expect(viewModel.lastCompletedQuery == "swiftzzz")
+    }
+
     @Test("a cancelled search cannot clobber a newer search's result")
     func supersededSearchCannotClobberNewerResult() async throws {
         let staleResult: [Repo] = [

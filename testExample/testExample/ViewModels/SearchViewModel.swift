@@ -26,6 +26,16 @@ final class SearchViewModel {
 
     private(set) var state: LoadState<[Repo]> = .idle
     private(set) var lastRefreshed: Date?
+    /// The trimmed query behind the results currently in `state`, or `nil`
+    /// when nothing has completed.
+    ///
+    /// Lives beside `state` rather than inside `LoadState` on purpose:
+    /// `LoadState` is a generic lifecycle enum and knows nothing about
+    /// searching. What needs it is the empty-results screen, whose title has
+    /// to name the query that *produced* the empty set — `searchText` is the
+    /// live field, still ahead of the debounce, so titling with it shows a
+    /// query nobody has run yet.
+    private(set) var lastCompletedQuery: String?
     /// Ticks once per second while `startTicker()` has been called, so
     /// "Updated Ns ago" stays current. Scoped, not free-running — see
     /// `startTicker()`/`stopTicker()`.
@@ -179,6 +189,7 @@ final class SearchViewModel {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
             state = .idle
+            lastCompletedQuery = nil
             // Belt and braces for any future caller that reaches this method
             // without going through `dispatch(_:)`. It is not what makes
             // retyping a cleared field work: `dispatch(_:)` writes the key
@@ -213,6 +224,7 @@ final class SearchViewModel {
             // reasoning this would be a classic TOCTOU.
             guard !Task.isCancelled else { return }
             state = .loaded(repos, isRefreshing: false)
+            lastCompletedQuery = trimmed
             lastRefreshed = .now
         } catch {
             // One catch, and it asks the cancellation *flag*, never the error

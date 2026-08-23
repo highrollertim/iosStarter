@@ -48,8 +48,27 @@ struct SearchView: View {
             ProgressView("Searching…")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .accessibilityIdentifier("search.loading")
-        case .loaded(let repos, _) where repos.isEmpty:
-            ContentUnavailableView.search(text: viewModel.searchText)
+        case .loaded(let repos, let isRefreshing) where repos.isEmpty:
+            // The title has to name the query that *produced* this empty set.
+            // `searchText` is the live field — still ahead of the debounce, and
+            // the user may already be typing the next query — so titling with
+            // it announces "No Results for …" about a search nobody has run.
+            // `lastCompletedQuery` is that query; `searchText` is the fallback
+            // for the case where nothing has completed yet.
+            ContentUnavailableView.search(
+                text: viewModel.lastCompletedQuery ?? viewModel.searchText
+            )
+            // `isRefreshing` is real here too: refining from an empty set is
+            // exactly when the user most needs to see that something is
+            // happening, and this branch has no list and no footer to say so.
+            .overlay(alignment: .bottom) {
+                if isRefreshing {
+                    ProgressView()
+                        .controlSize(.small)
+                        .padding()
+                        .accessibilityIdentifier("search.emptyRefreshing")
+                }
+            }
         case .loaded(let repos, let isRefreshing):
             List(repos) { repo in
                 NavigationLink(value: repo) {
