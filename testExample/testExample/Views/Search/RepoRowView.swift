@@ -10,6 +10,20 @@ struct RepoRowView: View {
     /// serious bug at AX5, where two lines might hold four words.
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
+    /// De-emphasis that actually clears WCAG AA — used instead of
+    /// `.foregroundStyle(.secondary)`.
+    ///
+    /// SwiftUI's `.secondary` resolves to the system `secondaryLabel`, which
+    /// renders around 3.9:1 against the default background. That is under
+    /// AA's 4.5:1 for any text below 18pt, which is *all* of this row, and
+    /// `performAccessibilityAudit()` flags it — see
+    /// `AccessibilityAuditUITests`. Deriving the de-emphasis from the primary
+    /// label colour instead keeps the hierarchy (visibly lighter than the
+    /// headline) while landing near 8:1 in both light and dark mode. The
+    /// lesson: the system's *aesthetic* defaults are not automatically its
+    /// *accessible* ones, and a semantic colour name is not a guarantee.
+    private static let deemphasized = Color.primary.opacity(0.65)
+
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(repo.fullName)
@@ -17,7 +31,7 @@ struct RepoRowView: View {
             if let summary = repo.summary {
                 Text(summary)
                     .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Self.deemphasized)
                     .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
             }
             // `ViewThatFits` tries the horizontal arrangement first and falls
@@ -32,7 +46,7 @@ struct RepoRowView: View {
                 VStack(alignment: .leading, spacing: 4) { stats }
             }
             .font(.caption)
-            .foregroundStyle(.secondary)
+            .foregroundStyle(Self.deemphasized)
         }
         .padding(.vertical, 2)
         // Merge the row into one accessibility element with a sentence-shaped

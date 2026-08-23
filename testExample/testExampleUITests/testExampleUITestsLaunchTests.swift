@@ -23,4 +23,21 @@ final class LaunchTests: XCTestCase {
         attachment.lifetime = .keepAlways
         add(attachment)
     }
+
+    /// Launch time is a user-visible feature and the easiest thing in an app
+    /// to regress by accident — one eager `ModelContainer`, one synchronous
+    /// file read in the composition root, and it is gone. `measure` with
+    /// `XCTApplicationLaunchMetric` records it per run, so the number lives in
+    /// the result bundle and a regression is visible rather than folklore.
+    ///
+    /// Launched hermetically, same as every other test here: this measures
+    /// *our* startup, not the network's mood.
+    @MainActor
+    func testLaunchPerformance() throws {
+        measure(metrics: [XCTApplicationLaunchMetric()]) {
+            let app = XCUIApplication()
+            app.launchArguments += ["-UITestMockNetwork", "-UITestInMemoryStore"]
+            app.launch()
+        }
+    }
 }
