@@ -80,17 +80,6 @@
         }
       }
     },
-    "Add to Favorites": {
-      "comment": "Toolbar button on the repository detail screen. Icon-only, so this text is also its VoiceOver label.",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Zu Favoriten hinzufügen"
-          }
-        }
-      }
-    },
     "Couldn't reach GitHub. Check your connection and try again.": {
       "comment": "Error shown on the search screen when the request never reached GitHub — offline, DNS failure, timeout.",
       "localizations": {
@@ -98,6 +87,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "GitHub ist nicht erreichbar. Prüfe deine Verbindung und versuche es erneut."
+          }
+        }
+      }
+    },
+    "Favorite": {
+      "comment": "Toolbar button on the repository detail screen that favorites or unfavorites the repository. Icon-only, so this text is also its VoiceOver label; it stays constant and the selected state is carried by an accessibility trait.",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Favorit"
           }
         }
       }
@@ -197,17 +197,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Eigentümer"
-          }
-        }
-      }
-    },
-    "Remove from Favorites": {
-      "comment": "Toolbar button on the repository detail screen when the repository is already a favorite. Icon-only, so this text is also its VoiceOver label.",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Aus Favoriten entfernen"
           }
         }
       }

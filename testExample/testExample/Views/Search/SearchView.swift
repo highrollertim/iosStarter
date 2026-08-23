@@ -14,6 +14,11 @@ struct SearchView: View {
             content
                 .navigationTitle("RepoScout")
                 .searchable(text: $viewModel.searchText, prompt: "Search GitHub repositories")
+                // The opt-in for the iOS 26 minimized search presentation:
+                // the search field collapses toward the tab bar as the user
+                // scrolls into results and expands again on interaction.
+                // `role: .search` on the Tab does not turn this on by itself.
+                .searchToolbarBehavior(.minimize)
                 // Repository names are case-sensitive-ish identifiers, not
                 // prose: auto-capitalizing "swift" to "Swift" and
                 // autocorrecting "vapor" to "vapour" are both actively wrong
@@ -83,7 +88,11 @@ struct SearchView: View {
             // safe to expose — the pull cancels any in-flight search and
             // becomes the one that owns the screen.
             .refreshable { await viewModel.dispatch(viewModel.searchText).value }
-            .safeAreaInset(edge: .bottom) {
+            // `safeAreaBar`, not `safeAreaInset`: the bar variant supplies the
+            // system bar background and scroll-edge treatment itself, so the
+            // leaf below carries no `.background(.bar)` and no width-stretching
+            // frame of its own.
+            .safeAreaBar(edge: .bottom) {
                 LastRefreshedFooter(viewModel: viewModel, isRefreshing: isRefreshing)
             }
             // The ticker that drives `lastRefreshedDescription` only runs
@@ -166,42 +175,51 @@ private struct ErrorBanner: View {
 /// observable property read while a `body` runs is registered as a dependency
 /// of that `body`. `lastRefreshedDescription` reads `viewModel.now`, which the
 /// ticker rewrites once a second. Inline this text back into `SearchView` —
-/// even inside the `safeAreaInset` builder — and that read is attributed to
-/// `SearchView.body`, so the whole screen (`NavigationStack`, `searchable`,
-/// the entire `List`) is invalidated every second forever. Pulled out into a
-/// leaf, the once-a-second dependency belongs to a view whose body is two
-/// `Text`s. Confine time-driven invalidation to the smallest view that
-/// actually displays the time.
+/// even inside the `safeAreaBar` builder — and that read is attributed to
+/// `SearchView.body`, so `SearchView.body` is re-evaluated every second
+/// forever. (Re-evaluated, not re-rendered: SwiftUI's structural diffing
+/// elides the rows that did not change. The cost is the evaluation, and it is
+/// still a cost worth not paying once a second.) Pulled out into a leaf, the
+/// once-a-second dependency belongs to a view whose body is two `Text`s.
+///
+/// The insulation is one-directional, and worth being precise about: it keeps
+/// the ticker's invalidation *inside* this leaf, but it does not exempt the
+/// leaf from the parent's. Anything that re-evaluates `SearchView.body` —
+/// `state` changing, `searchText` changing — re-evaluates this too. That
+/// direction is harmless; the once-a-second one is the one that compounds.
 private struct LastRefreshedFooter: View {
     let viewModel: SearchViewModel
     let isRefreshing: Bool
 
     var body: some View {
-        if let refreshed = viewModel.lastRefreshedDescription {
-            HStack(spacing: 6) {
-                if isRefreshing {
-                    // Stale-while-revalidate made visible: the list below is
-                    // still the previous query's results, and this says so
-                    // without yanking them off screen.
-                    ProgressView()
-                        .controlSize(.mini)
-                }
+        // The `HStack` is outside the `if let`, so the spinner does not
+        // depend on there being a timestamp to show. Gating "a request is in
+        // flight" on "a previous request has finished" was accidental
+        // coupling: the two facts are unrelated, and the first refresh after
+        // a cold start had both a spinner to show and no timestamp yet.
+        HStack(spacing: 6) {
+            if isRefreshing {
+                // Stale-while-revalidate made visible: the list below is
+                // still the previous query's results, and this says so
+                // without yanking them off screen.
+                ProgressView()
+                    .controlSize(.mini)
+            }
+            if let refreshed = viewModel.lastRefreshedDescription {
                 Text(refreshed)
                     // The digits change every second; without a monospaced
                     // figure face the text jitters as glyph widths change.
                     .monospacedDigit()
             }
-            .font(.footnote)
-            .foregroundStyle(.secondary)
-            .padding(.vertical, 4)
-            .frame(maxWidth: .infinity)
-            .background(.bar)
-            // Ambient status, not content. A VoiceOver element whose label
-            // changes once a second is actively hostile: it interrupts the
-            // user mid-sentence and makes the results list hard to escape.
-            // The information is decorative here; the list is the content.
-            .accessibilityHidden(true)
         }
+        .font(.footnote)
+        .foregroundStyle(.secondary)
+        .padding(.vertical, 4)
+        // Ambient status, not content. A VoiceOver element whose label
+        // changes once a second is actively hostile: it interrupts the
+        // user mid-sentence and makes the results list hard to escape.
+        // The information is decorative here; the list is the content.
+        .accessibilityHidden(true)
     }
 }
 

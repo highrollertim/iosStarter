@@ -6,26 +6,27 @@ struct RootView: View {
 
     var body: some View {
         TabView {
-            // `role: .search` is one keyword that buys platform-correct
-            // behaviour: the system pins the search tab to the trailing edge,
-            // gives it the standard treatment in the iOS 26 tab bar (and the
-            // sidebar/tab-bar adaptation on iPad), and wires up the standard
-            // search keyboard shortcut. Hard-coding position and appearance
-            // to imitate this is how apps end up feeling subtly wrong after
-            // an OS update.
+            // `role: .search` states what this tab *is*, and the system
+            // decides what that means: it pins the tab to the trailing edge
+            // of the tab bar and gives it the search-specific presentation
+            // for the platform. It is a declaration of role, not a bundle of
+            // appearance — the two behaviours below are separate opt-ins.
             Tab("Search", systemImage: "magnifyingglass", role: .search) {
                 SearchView(viewModel: searchViewModel)
             }
+            // `.accessibilityIdentifier` on a `Tab` identifies the tab-bar
+            // button that selects it, which is what UI tests need: a
+            // locale-independent handle that does not break under
+            // `-testLanguage de`.
+            .accessibilityIdentifier("tab.search")
             Tab("Favorites", systemImage: "star.fill") {
                 FavoritesView()
             }
+            .accessibilityIdentifier("tab.favorites")
         }
-        // No `.accessibilityIdentifier` on the tabs: `Tab` is a builder for
-        // tab *content*, not a `View`, so modifiers applied to it decorate
-        // the screen inside the tab rather than the tab-bar button that
-        // selects it. There is no API to identify that button, so
-        // `FavoritesScreen.open()` queries it by its localized title — see
-        // the note there.
+        // Collapses the tab bar as the user scrolls into content and brings
+        // it back on the way up. Opt-in, not implied by `role: .search`.
+        .tabBarMinimizeBehavior(.onScrollDown)
     }
 }
 

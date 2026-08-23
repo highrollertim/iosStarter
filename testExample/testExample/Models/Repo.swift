@@ -37,3 +37,26 @@ nonisolated struct Repo: Identifiable, Hashable, Sendable {
     let language: String?
     let htmlURL: URL
 }
+
+extension Repo {
+    /// `htmlURL` if it is safe to hand to `openURL`, `nil` otherwise.
+    ///
+    /// The scheme comes straight off a network payload, so it is the server's
+    /// choice, not ours. The risk is *deep-linking*: a custom scheme opens
+    /// whichever app has registered it, which is a way to push the user into
+    /// another app's handler on a tap they thought stayed here. (It is not
+    /// script execution — `openURL` will not run a `javascript:` URL.)
+    ///
+    /// Compared lowercased because RFC 3986 defines schemes as
+    /// case-insensitive: `HTTPS://…` is a perfectly ordinary web URL, and an
+    /// exact-match check would have refused to render it.
+    ///
+    /// It lives on the model rather than in the view because "is this URL one
+    /// we are willing to open" is a fact about the repository, and a second
+    /// screen that linked out would otherwise have to remember to re-derive
+    /// it.
+    var webURL: URL? {
+        let scheme = htmlURL.scheme?.lowercased()
+        return (scheme == "https" || scheme == "http") ? htmlURL : nil
+    }
+}

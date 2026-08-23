@@ -13,25 +13,19 @@ struct FavoritesScreen {
 
     /// UIKit's own `EditButton`, so its label is a *system* string —
     /// "Bearbeiten" under `-testLanguage de`. Locale-bound with no app-side
-    /// fix, for the same reason as `SearchScreen.noResultsView`.
+    /// fix, for the same reason as `SearchScreen.noResultsView`. Together
+    /// with the "Delete" confirmation below and that view's system title,
+    /// these are the queries that keep the German verification run to
+    /// `LaunchTests` only.
     var editButton: XCUIElement {
         app.navigationBars.buttons["Edit"]
     }
 
-    /// Queried by its localized title because there is no alternative: `Tab`
-    /// is a builder for a tab's *content*, not a `View`, so
-    /// `.accessibilityIdentifier` applied to it decorates the screen inside
-    /// the tab rather than the tab-bar button that selects it. SwiftUI
-    /// exposes no API to identify that button, so a localized-string query is
-    /// the honest option.
-    ///
-    /// Measured, not assumed: under `-testLanguage de` this fails with
-    /// *No matches found for … '"Favorites" IN identifiers'*, because the tab
-    /// now reads "Favoriten". Together with `editButton` and the "Delete"
-    /// confirmation below, that is why the German verification run covers
-    /// `LaunchTests` only.
+    /// Queried by identifier, which `Tab` carries onto the tab-bar button
+    /// that selects it — so this survives `-testLanguage de`, where the tab
+    /// reads "Favoriten".
     func open() {
-        app.tabBars.buttons["Favorites"].tap()
+        app.tabBars.buttons["tab.favorites"].tap()
     }
 
     func row(for fullName: String) -> XCUIElement {
