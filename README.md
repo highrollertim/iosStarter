@@ -36,13 +36,22 @@ app that launches is RepoScout, with that name and icon.) No API key or
 configuration is required: GitHub's search endpoint is public and the app
 calls it directly over `URLSession`.
 
+The app is iPhone-only and English/German. Both are deliberate; see the
+"Shipping hygiene" section of `ARCHITECTURE.md`.
+
 ## Running the tests
 
 RepoScout has two independent test suites: a Swift Testing unit suite that
-covers decoding, the search view model's state machine, the live network
-client's URL construction, and the SwiftData favorites store; and an
-XCTest-based UI suite that drives the real app through its screens against a
-mocked network so it stays hermetic and offline.
+covers decoding, the search view model's state machine and cancellation
+behaviour, the live network client's URL construction and HTTP-status-to-error
+mapping, and the SwiftData favorites store; and an XCTest-based UI suite that
+drives the real app through its screens against a mocked network so it stays
+hermetic and offline, including an accessibility audit at default and
+accessibility text sizes.
+
+The scheme is shared (`testExample.xcodeproj/xcshareddata/xcschemes/`), so
+every command below works on a fresh clone — no "scheme not found", and
+nothing to configure in Xcode first.
 
 Run everything — unit and UI — from the command line:
 
@@ -65,6 +74,12 @@ cd testExample
 xcodebuild test -project testExample.xcodeproj -scheme testExample -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -only-testing:testExampleUITests
 ```
 
+Replace `iPhone 17 Pro` with any simulator you actually have installed
+(`xcrun simctl list devices available` will tell you), or — if you only want
+to check that the project compiles — use
+`-destination 'generic/platform=iOS Simulator'` with `xcodebuild build`,
+which needs no booted device at all.
+
 You can equally well run either suite from Xcode's Test navigator (`Cmd-U`
 runs both by default; select a specific suite to scope it).
 
@@ -82,9 +97,15 @@ the fastest path to the interesting parts.
 | SwiftData persistence (model, reads via `@Query`, writes via a store) | `testExample/testExample/Persistence/` |
 | Swift Testing (the modern `#expect`/`@Test` unit-test framework) | `testExample/testExampleTests/` |
 | BDD-style UI tests (Given/When/Then over XCUITest) | `testExample/testExampleUITests/` |
+| Localization (String Catalog, commented keys, plural variations, whole-sentence accessibility labels, full German) | `testExample/testExample/Views/Search/RepoRowView.swift`, `testExample/testExample/Localizable.xcstrings` |
+| Accessibility (merged row elements, Dynamic Type via `ViewThatFits`, a VoiceOver-safe ticker) | `testExample/testExample/Views/Search/RepoRowView.swift`, `testExample/testExample/Views/Search/SearchView.swift` |
 
 `ARCHITECTURE.md` walks through how these pieces connect, with a reading
 path for whatever your starting point is.
+
+If `RepoScout-Guide.pdf` is present at the repository root, it's a rendered
+field guide to this codebase — the same ground as the two documents above,
+laid out for reading away from an editor.
 
 ## A note on the project name
 
@@ -97,4 +118,10 @@ that churn, the product identity (display name, app icon, and everything a
 user or reader actually sees) was layered on as RepoScout while the
 underlying project scaffolding kept its original name. `RepoScoutApp.swift`
 is the `@main` entry point; `testExample.xcodeproj` is just the file you
-double-click to get there.
+double-click to get there. The one place the scaffold name genuinely
+mattered — the bundle identifier, which is what a device actually records —
+*was* changed: the app ships as `work.timmaher.RepoScout`.
+
+## License
+
+MIT — see [`LICENSE`](LICENSE). Copy anything here into your own project.
