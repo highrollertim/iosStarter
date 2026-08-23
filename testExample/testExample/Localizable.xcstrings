@@ -1,70 +1,246 @@
 {
   "sourceLanguage": "en",
   "strings": {
-    "%@, %@ stars, written in %@.": {
-      "comment": "VoiceOver label for a search result with no description. Placeholders in order: repository name (owner/repo), star count already formatted for the locale, programming language.",
+    "%@, %lld stars, written in %@.": {
+      "comment": "VoiceOver label for a search result with no description. Placeholders in order: repository name (owner/repo), star count, programming language. The star count carries a plural substitution so the noun agrees with it.",
       "localizations": {
         "de": {
+          "substitutions": {
+            "starCount": {
+              "argNum": 2,
+              "formatSpecifier": "lld",
+              "variations": {
+                "plural": {
+                  "one": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%arg Stern"
+                    }
+                  },
+                  "other": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%arg Sterne"
+                    }
+                  }
+                }
+              }
+            }
+          },
           "stringUnit": {
             "state": "translated",
-            "value": "%1$@, %2$@ Sterne, in %3$@ geschrieben."
+            "value": "%1$@, %#@starCount@, in %3$@ geschrieben."
           }
         },
         "en": {
+          "substitutions": {
+            "starCount": {
+              "argNum": 2,
+              "formatSpecifier": "lld",
+              "variations": {
+                "plural": {
+                  "one": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%arg star"
+                    }
+                  },
+                  "other": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%arg stars"
+                    }
+                  }
+                }
+              }
+            }
+          },
           "stringUnit": {
             "state": "translated",
-            "value": "%1$@, %2$@ stars, written in %3$@."
+            "value": "%1$@, %#@starCount@, written in %3$@."
           }
         }
       }
     },
-    "%@, %@ stars, written in %@. %@": {
-      "comment": "VoiceOver label for one search result. Placeholders in order: repository name (owner/repo), star count already formatted for the locale, programming language, one-line description.",
+    "%@, %lld stars, written in %@. %@": {
+      "comment": "VoiceOver label for one search result. Placeholders in order: repository name (owner/repo), star count, programming language, one-line description. The star count carries a plural substitution so the noun agrees with it.",
       "localizations": {
         "de": {
+          "substitutions": {
+            "starCount": {
+              "argNum": 2,
+              "formatSpecifier": "lld",
+              "variations": {
+                "plural": {
+                  "one": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%arg Stern"
+                    }
+                  },
+                  "other": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%arg Sterne"
+                    }
+                  }
+                }
+              }
+            }
+          },
           "stringUnit": {
             "state": "translated",
-            "value": "%1$@, %2$@ Sterne, in %3$@ geschrieben. %4$@"
+            "value": "%1$@, %#@starCount@, in %3$@ geschrieben. %4$@"
           }
         },
         "en": {
+          "substitutions": {
+            "starCount": {
+              "argNum": 2,
+              "formatSpecifier": "lld",
+              "variations": {
+                "plural": {
+                  "one": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%arg star"
+                    }
+                  },
+                  "other": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%arg stars"
+                    }
+                  }
+                }
+              }
+            }
+          },
           "stringUnit": {
             "state": "translated",
-            "value": "%1$@, %2$@ stars, written in %3$@. %4$@"
+            "value": "%1$@, %#@starCount@, written in %3$@. %4$@"
           }
         }
       }
     },
-    "%@, %@ stars.": {
-      "comment": "VoiceOver label for a search result with neither a language nor a description. Placeholders in order: repository name (owner/repo), star count already formatted for the locale.",
+    "%@, %lld stars.": {
+      "comment": "VoiceOver label for a search result with neither a language nor a description. Placeholders in order: repository name (owner/repo), star count. The star count carries a plural substitution so the noun agrees with it.",
       "localizations": {
         "de": {
+          "substitutions": {
+            "starCount": {
+              "argNum": 2,
+              "formatSpecifier": "lld",
+              "variations": {
+                "plural": {
+                  "one": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%arg Stern"
+                    }
+                  },
+                  "other": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%arg Sterne"
+                    }
+                  }
+                }
+              }
+            }
+          },
           "stringUnit": {
             "state": "translated",
-            "value": "%1$@, %2$@ Sterne."
+            "value": "%1$@, %#@starCount@."
           }
         },
         "en": {
+          "substitutions": {
+            "starCount": {
+              "argNum": 2,
+              "formatSpecifier": "lld",
+              "variations": {
+                "plural": {
+                  "one": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%arg star"
+                    }
+                  },
+                  "other": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%arg stars"
+                    }
+                  }
+                }
+              }
+            }
+          },
           "stringUnit": {
             "state": "translated",
-            "value": "%1$@, %2$@ stars."
+            "value": "%1$@, %#@starCount@."
           }
         }
       }
     },
-    "%@, %@ stars. %@": {
-      "comment": "VoiceOver label for a search result with no detected language. Placeholders in order: repository name (owner/repo), star count already formatted for the locale, one-line description.",
+    "%@, %lld stars. %@": {
+      "comment": "VoiceOver label for a search result with no detected language. Placeholders in order: repository name (owner/repo), star count, one-line description. The star count carries a plural substitution so the noun agrees with it.",
       "localizations": {
         "de": {
+          "substitutions": {
+            "starCount": {
+              "argNum": 2,
+              "formatSpecifier": "lld",
+              "variations": {
+                "plural": {
+                  "one": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%arg Stern"
+                    }
+                  },
+                  "other": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%arg Sterne"
+                    }
+                  }
+                }
+              }
+            }
+          },
           "stringUnit": {
             "state": "translated",
-            "value": "%1$@, %2$@ Sterne. %3$@"
+            "value": "%1$@, %#@starCount@. %3$@"
           }
         },
         "en": {
+          "substitutions": {
+            "starCount": {
+              "argNum": 2,
+              "formatSpecifier": "lld",
+              "variations": {
+                "plural": {
+                  "one": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%arg star"
+                    }
+                  },
+                  "other": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%arg stars"
+                    }
+                  }
+                }
+              }
+            }
+          },
           "stringUnit": {
             "state": "translated",
-            "value": "%1$@, %2$@ stars. %3$@"
+            "value": "%1$@, %#@starCount@. %3$@"
           }
         }
       }
@@ -86,7 +262,7 @@
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "GitHub ist nicht erreichbar. Prüfe deine Verbindung und versuche es erneut."
+            "value": "GitHub ist nicht erreichbar. Prüfe deine Internetverbindung und versuche es erneut."
           }
         }
       }
@@ -119,7 +295,7 @@
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Finde Repositories nach Name, Thema oder Sprache."
+            "value": "Finde Repositorys nach Namen, Thema oder Sprache."
           }
         }
       }
@@ -152,7 +328,7 @@
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "GitHub drosselt derzeit die Suchanfragen. Warte einen Moment."
+            "value": "GitHub drosselt derzeit die Suchanfragen. Versuche es in einer Minute erneut."
           }
         }
       }
@@ -163,7 +339,7 @@
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "GitHub hat eine Antwort gesendet, die diese App nicht lesen konnte."
+            "value": "GitHub hat eine Antwort zurückgegeben, die diese App nicht lesen kann."
           }
         }
       }
@@ -196,21 +372,14 @@
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Eigentümer"
+            "value": "Inhaber"
           }
         }
       }
     },
     "RepoScout": {
       "comment": "Navigation bar title of the search screen. The app's own name — a proper noun, do not translate.",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "RepoScout"
-          }
-        }
-      }
+      "shouldTranslate": false
     },
     "Repositories you favorite will appear here.": {
       "comment": "Body text of the empty state on the Favorites tab.",
@@ -218,7 +387,7 @@
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Repositories, die du als Favorit markierst, erscheinen hier."
+            "value": "Repositorys, die du zu deinen Favoriten hinzufügst, erscheinen hier."
           }
         }
       }
@@ -262,7 +431,7 @@
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "GitHub-Repositories durchsuchen"
+            "value": "GitHub-Repositorys durchsuchen"
           }
         }
       }
@@ -273,7 +442,7 @@
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Suche läuft …"
+            "value": "Suche läuft …"
           }
         }
       }
@@ -284,7 +453,7 @@
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Etwas ist schiefgelaufen"
+            "value": "Ein Fehler ist aufgetreten"
           }
         }
       }
@@ -295,7 +464,7 @@
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Etwas ist schiefgelaufen. Bitte versuche es erneut."
+            "value": "Ein Fehler ist aufgetreten. Bitte versuche es erneut."
           }
         }
       }
@@ -317,7 +486,7 @@
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Statistiken"
+            "value": "Statistik"
           }
         }
       }
@@ -328,7 +497,7 @@
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Diese Suche kann nicht gesendet werden. Versuche einen anderen Text."
+            "value": "Diese Suche kann nicht gesendet werden. Versuche es mit einem anderen Suchbegriff."
           }
         }
       }

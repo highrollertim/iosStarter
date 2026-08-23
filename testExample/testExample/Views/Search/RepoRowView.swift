@@ -64,7 +64,7 @@ struct RepoRowView: View {
         // the children's *traits and actions* too, which in a `List`'s edit
         // mode swallowed the row's delete control into this element.
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(accessibilityDescription)
+        .accessibilityLabel(Self.accessibilityDescription(for: repo))
     }
 
     /// Extracted so the two `ViewThatFits` candidates differ only in their
@@ -84,39 +84,63 @@ struct RepoRowView: View {
         }
     }
 
-    // Whole, localizable sentences — not fragments joined with ", ". Joining
-    // fragments (`[a, b, c].joined(separator: ", ")`) bakes in English word
-    // order and punctuation; a translator only ever sees isolated pieces
-    // like "written in Swift" with no sentence around them, so they can't
-    // reorder or re-punctuate for a language that doesn't work like English.
-    // `String(localized:)` on each complete sentence gives translators the
-    // whole thing to work with instead.
-    //
-    // The star count is interpolated pre-formatted, for the same reason as
-    // above and one more: VoiceOver should speak "sixty-seven thousand", not
-    // "six seven zero zero zero".
-    private var accessibilityDescription: String {
-        let stars = repo.stargazersCount.formatted()
+    /// The row's VoiceOver label: one whole sentence per shape of repository.
+    ///
+    /// Whole, localizable sentences — not fragments joined with ", ". Joining
+    /// fragments (`[a, b, c].joined(separator: ", ")`) bakes in English word
+    /// order and punctuation; a translator only ever sees isolated pieces like
+    /// "written in Swift" with no sentence around them, so they can't reorder
+    /// or re-punctuate for a language that doesn't work like English.
+    /// `String(localized:)` on each complete sentence gives translators the
+    /// whole thing to work with instead.
+    ///
+    /// **The star count is a raw `Int`, and that is the interesting part.**
+    /// The obvious implementation interpolates `stargazersCount.formatted()`,
+    /// so the catalog sees `%@` — a string that happens to contain digits —
+    /// and every locale reads "1 stars". A `%@` cannot carry a plural
+    /// variation, because a plural variation needs a *number* to inflect on.
+    /// Passing the `Int` puts `%lld` in the key, and the catalog then attaches
+    /// a **substitution** (`%#@starCount@`) to that argument: the sentence
+    /// stays one key for the translator, and the noun beside the number
+    /// inflects — "1 star"/"5 stars", "1 Stern"/"5 Sterne" — inside it. The
+    /// whole-sentence lesson and plural agreement are not in tension; the
+    /// pre-formatted `%@` was what put them in tension.
+    ///
+    /// The visible `Label` above still uses `.formatted()`, because there the
+    /// number stands alone with no noun to agree with and locale-correct digit
+    /// grouping is the only thing at stake.
+    ///
+    /// `nonisolated static`, and reachable from tests, for the same reason
+    /// `SearchViewModel.refreshedDescription(from:now:)` is: a plural rule
+    /// lives in the catalog rather than in any branch of this code, so the
+    /// only way to know it is right is to call this and read the sentence
+    /// back — in both languages. See `RepoRowLabelTests`. (`nonisolated`
+    /// because this is a pure function of a `Repo`; without it the project's
+    /// default `MainActor` isolation would follow the enclosing `View` onto
+    /// it, and a test suite would have to be main-actor-isolated to say
+    /// anything about a string.)
+    nonisolated static func accessibilityDescription(for repo: Repo) -> String {
+        let stars = repo.stargazersCount
         switch (repo.language, repo.summary) {
-        case let (language?, summary?):
+        case (let language?, let summary?):
             return String(
                 localized: "\(repo.fullName), \(stars) stars, written in \(language). \(summary)",
-                comment: "VoiceOver label for one search result. Placeholders in order: repository name (owner/repo), star count already formatted for the locale, programming language, one-line description."
+                comment: "VoiceOver label for one search result. Placeholders in order: repository name (owner/repo), star count, programming language, one-line description. The star count carries a plural substitution so the noun agrees with it."
             )
-        case let (language?, nil):
+        case (let language?, nil):
             return String(
                 localized: "\(repo.fullName), \(stars) stars, written in \(language).",
-                comment: "VoiceOver label for a search result with no description. Placeholders in order: repository name (owner/repo), star count already formatted for the locale, programming language."
+                comment: "VoiceOver label for a search result with no description. Placeholders in order: repository name (owner/repo), star count, programming language. The star count carries a plural substitution so the noun agrees with it."
             )
-        case let (nil, summary?):
+        case (nil, let summary?):
             return String(
                 localized: "\(repo.fullName), \(stars) stars. \(summary)",
-                comment: "VoiceOver label for a search result with no detected language. Placeholders in order: repository name (owner/repo), star count already formatted for the locale, one-line description."
+                comment: "VoiceOver label for a search result with no detected language. Placeholders in order: repository name (owner/repo), star count, one-line description. The star count carries a plural substitution so the noun agrees with it."
             )
         case (nil, nil):
             return String(
                 localized: "\(repo.fullName), \(stars) stars.",
-                comment: "VoiceOver label for a search result with neither a language nor a description. Placeholders in order: repository name (owner/repo), star count already formatted for the locale."
+                comment: "VoiceOver label for a search result with neither a language nor a description. Placeholders in order: repository name (owner/repo), star count. The star count carries a plural substitution so the noun agrees with it."
             )
         }
     }
