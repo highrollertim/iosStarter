@@ -171,6 +171,10 @@ actor KeyedGatedGitHubClient: GitHubClient {
     }
 
     private var waiters: [String: [Waiter]] = [:]
+    /// A *set*, not a count: arming a key is idempotent. Calling `open(_:)` N
+    /// times with no waiter parked arms exactly one future call, and the first
+    /// call for that key consumes the arming. Tests that need N calls to sail
+    /// through must open the key N times *after* each one has suspended.
     private var preOpened: Set<String> = []
     private let repos: [String: [Repo]]
 
@@ -194,8 +198,12 @@ actor KeyedGatedGitHubClient: GitHubClient {
             } onCancel: {
                 Task { await self.release(query, ticket: ticket) }
             }
-            try Task.checkCancellation()
         }
+        // Outside the `if`, so the pre-armed path checks cancellation too. A
+        // real client never hands results to an already-cancelled task just
+        // because the response happened to be ready; a double that did would
+        // let a view model's cancellation handling pass a test it should fail.
+        try Task.checkCancellation()
         return repos[query] ?? []
     }
 
@@ -237,14 +245,18 @@ actor KeyedGatedGitHubClient: GitHubClient {
 /// and error handling — status codes, malformed bodies — with no real HTTP
 /// traffic and no flakiness from an actual network.
 ///
-/// `handler` is a `Mutex`, not `nonisolated(unsafe) static var`. The old
-/// comment justified the unsafe global by pointing at the suite's
-/// `.serialized` trait, which was the wrong race entirely: `.serialized` stops
-/// two *tests* from overlapping, but the read of `handler` in `startLoading()`
-/// happens on a `URLSession` loader thread, concurrently with the test thread
-/// writing it in `defer`. No amount of test serialization orders a test
-/// against the loader thread it spawned. The `Mutex` orders the actual
-/// participants.
+/// `handler` is a `Mutex`, not `nonisolated(unsafe) static var`, and the two
+/// mechanisms guarding it answer two different questions.
+///
+/// The `Mutex` removes the *data* race: the read of `handler` in
+/// `startLoading()` happens on a `URLSession` loader thread, concurrently with
+/// the test thread writing it. Serializing a suite's tests does not order a
+/// test against the loader thread it spawned; the lock does.
+///
+/// What the lock does **not** decide is *which* handler answers *which*
+/// request — `handler` is one process-wide slot, so two overlapping
+/// `withStubbedClient` calls would each see a well-defined value that simply
+/// belonged to the other test. That is what `StubHandlerGate` below is for.
 final class StubURLProtocol: URLProtocol {
     typealias Handler = @Sendable (URLRequest) throws -> (HTTPURLResponse, Data)
 
@@ -279,28 +291,86 @@ final class StubURLProtocol: URLProtocol {
     }
 }
 
+/// Serializes ownership of `StubURLProtocol.handler`, which is one slot for
+/// the whole process.
+///
+/// A `.serialized` trait only orders tests *within* one suite; Swift Testing
+/// runs suites concurrently, so a second suite reaching for a stubbed client
+/// would install its handler over the first's — each read well-defined, and
+/// each answering the wrong test. Holding this gate across a whole
+/// `withStubbedClient` call makes "I own the handler" true process-wide for
+/// that call's duration.
+///
+/// Shaped as `acquire()`/`release()` rather than a `run { }` wrapper on
+/// purpose: a generic `run<T>` would have to send the body across the actor
+/// boundary and return `T` back out, which requires `T: Sendable` and the
+/// closure to be `@Sendable`. The bodies here legitimately produce
+/// non-`Sendable` values and capture the calling test's state, so the lock is
+/// taken *around* them instead of wrapping them.
+actor StubHandlerGate {
+    static let shared = StubHandlerGate()
+
+    private var held = false
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+
+    func acquire() async {
+        guard held else {
+            held = true
+            return
+        }
+        await withCheckedContinuation { waiters.append($0) }
+        // Resumed by `release()`, which hands ownership straight over rather
+        // than clearing `held` — so a waiter cannot be barged by a caller
+        // that arrives while it is waking up.
+    }
+
+    func release() {
+        if waiters.isEmpty {
+            held = false
+        } else {
+            waiters.removeFirst().resume()
+        }
+    }
+}
+
 /// Runs `body` against a `LiveGitHubClient` whose session is stubbed by
 /// `StubURLProtocol`, then invalidates that session.
 ///
-/// The invalidation is the point. Every `URLSession(configuration:)` spins up
+/// Two things happen around `body`. The gate gives this call exclusive
+/// ownership of the process-wide `StubURLProtocol.handler` slot for its whole
+/// duration, so no concurrently running suite can answer this test's requests.
+///
+/// The invalidation is the second. Every `URLSession(configuration:)` spins up
 /// its own delegate queue and loader thread and keeps them alive until it is
 /// invalidated or deallocated — and a session retains itself while it has
 /// outstanding work. A suite that builds one per test and walks away leaks a
-/// thread per test. `finishTasksAndInvalidate()` costs one line here and one
-/// `defer` for the whole suite.
+/// thread per test. `finishTasksAndInvalidate()` costs one line here.
 func withStubbedClient<T>(
     handler: @escaping StubURLProtocol.Handler,
     client body: (LiveGitHubClient) async throws -> T
-) async rethrows -> T {
+) async throws -> T {
+    await StubHandlerGate.shared.acquire()
+
     let configuration = URLSessionConfiguration.ephemeral
     configuration.protocolClasses = [StubURLProtocol.self]
     let session = URLSession(configuration: configuration)
     StubURLProtocol.handler = handler
-    defer {
-        StubURLProtocol.handler = nil
-        session.finishTasksAndInvalidate()
+
+    // Captured rather than rethrown immediately: releasing the gate is an
+    // `await`, and `defer` bodies cannot suspend. Funnelling both outcomes
+    // through one `Result` keeps the teardown on exactly one path.
+    let outcome: Result<T, any Error>
+    do {
+        outcome = .success(try await body(LiveGitHubClient(session: session)))
+    } catch {
+        outcome = .failure(error)
     }
-    return try await body(LiveGitHubClient(session: session))
+
+    StubURLProtocol.handler = nil
+    session.finishTasksAndInvalidate()
+    await StubHandlerGate.shared.release()
+
+    return try outcome.get()
 }
 
 extension [Repo] {

@@ -6,12 +6,12 @@ import Foundation
 /// exactly what `async/await` is for. Combine appears in this codebase only
 /// where values genuinely stream over time (see `SearchViewModel`).
 nonisolated struct LiveGitHubClient: GitHubClient {
-    /// A `var`, not a `let`, purely so the compiler-synthesized memberwise
-    /// initializer exposes a `session:` parameter — that is the seam
-    /// `LiveGitHubClientErrorMappingTests` uses to inject a session whose
-    /// `protocolClasses` are stubbed. A `let` with a default value would
-    /// still be memberwise-initializable, but spelling it `var` documents
-    /// that substitution is an intended use, not an accident of synthesis.
+    /// A `var`, not a `let`, because that is what creates the `session:`
+    /// parameter at all: Swift's synthesized memberwise initializer *omits*
+    /// a `let` that already has a default value — there is nothing left to
+    /// initialize — and exposes a defaulted parameter only for a `var`. The
+    /// parameter is the seam `LiveGitHubClientErrorMappingTests` uses to
+    /// inject a session whose `protocolClasses` are stubbed.
     var session: URLSession = .shared
 
     /// Static and pure so URL construction is unit-testable without any
@@ -23,6 +23,19 @@ nonisolated struct LiveGitHubClient: GitHubClient {
             URLQueryItem(name: "sort", value: "stars"),
             URLQueryItem(name: "per_page", value: "30"),
         ]
+        // `+` is a legal character in a query value per RFC 3986, so
+        // `URLComponents` leaves it alone — but servers that form-decode the
+        // query string (GitHub among them) read a literal `+` as a space.
+        // Searching for "c++" therefore reaches the API as "c  " and comes
+        // back as results for "c". Escaping it to `%2B` after the fact is the
+        // fix; `URLComponents` offers no per-item control over which
+        // sub-delimiters it escapes.
+        //
+        // Read into a local first: assigning `components.percentEncodedQuery`
+        // from an expression that also reads it is an overlapping access to
+        // `components`, which Swift's exclusivity checking rejects.
+        let encoded = components?.percentEncodedQuery
+        components?.percentEncodedQuery = encoded?.replacingOccurrences(of: "+", with: "%2B")
         return components?.url
     }
 

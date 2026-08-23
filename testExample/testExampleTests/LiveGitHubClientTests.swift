@@ -21,6 +21,13 @@ struct LiveGitHubClientTests {
     func queryEncoding() throws {
         let url = try #require(LiveGitHubClient.searchURL(matching: "swift ui kit"))
         #expect(url.absoluteString.contains("q=swift%20ui%20kit"))
+
+        // `+` survives `URLComponents` unescaped and is form-decoded to a
+        // space by the server, so an unescaped "c++" searches for "c".
+        let plus = try #require(LiveGitHubClient.searchURL(matching: "c++"))
+        #expect(plus.absoluteString.contains("q=c%2B%2B"))
+        // The rest of the query must be untouched by the substitution.
+        #expect(plus.absoluteString.contains("per_page=30"))
     }
 }
 
@@ -69,6 +76,27 @@ struct LiveGitHubClientErrorMappingTests {
         Case(statusCode: 200, body: Data("not valid json".utf8), expected: .decoding,
              description: "200 with a body that isn't JSON → decoding"),
     ]
+
+    /// Success cases, which the throwing table above cannot express.
+    ///
+    /// The one entry that matters is 203: the status switch matches
+    /// `200..<300`, and narrowing it to `== 200` would turn a perfectly good
+    /// "Non-Authoritative Information" response — what a caching proxy in
+    /// front of the API returns — into `.server(203)`. Nothing in the error
+    /// table notices that mutation, so this case pins it.
+    static let successStatusCodes = [200, 203, 206]
+
+    @Test("any 2xx with a decodable body is a success", arguments: successStatusCodes)
+    func successStatusCodesDecode(_ statusCode: Int) async throws {
+        try await withStubbedClient { request in
+            (Self.response(for: request, statusCode: statusCode, headers: [:]),
+             RepoDecodingTests.searchResponseJSON)
+        } client: { client in
+            let repos = try await client.searchRepositories(matching: "swift")
+            #expect(repos.count == 2)
+            #expect(repos.first?.fullName == "apple/swift")
+        }
+    }
 
     private static func response(
         for request: URLRequest,
