@@ -1,127 +1,401 @@
 {
-  "sourceLanguage" : "en",
-  "strings" : {
-    "%@, %@ stars, written in %@." : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "%1$@, %2$@ stars, written in %3$@."
+  "sourceLanguage": "en",
+  "strings": {
+    "%@, %@ stars, written in %@.": {
+      "comment": "VoiceOver label for a search result with no description. Placeholders in order: repository name (owner/repo), star count already formatted for the locale, programming language.",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@, %2$@ Sterne, in %3$@ geschrieben."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@, %2$@ stars, written in %3$@."
           }
         }
       }
     },
-    "%@, %@ stars, written in %@. %@" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "%1$@, %2$@ stars, written in %3$@. %4$@"
+    "%@, %@ stars, written in %@. %@": {
+      "comment": "VoiceOver label for one search result. Placeholders in order: repository name (owner/repo), star count already formatted for the locale, programming language, one-line description.",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@, %2$@ Sterne, in %3$@ geschrieben. %4$@"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@, %2$@ stars, written in %3$@. %4$@"
           }
         }
       }
     },
-    "%@, %@ stars." : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "%1$@, %2$@ stars."
+    "%@, %@ stars.": {
+      "comment": "VoiceOver label for a search result with neither a language nor a description. Placeholders in order: repository name (owner/repo), star count already formatted for the locale.",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@, %2$@ Sterne."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@, %2$@ stars."
           }
         }
       }
     },
-    "%@, %@ stars. %@" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "%1$@, %2$@ stars. %3$@"
+    "%@, %@ stars. %@": {
+      "comment": "VoiceOver label for a search result with no detected language. Placeholders in order: repository name (owner/repo), star count already formatted for the locale, one-line description.",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@, %2$@ Sterne. %3$@"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@, %2$@ stars. %3$@"
           }
         }
       }
     },
-    "About" : {
-
+    "About": {
+      "comment": "Section header on the repository detail screen, above the repository's one-line description.",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Beschreibung"
+          }
+        }
+      }
     },
-    "Add to Favorites" : {
-
+    "Add to Favorites": {
+      "comment": "Toolbar button on the repository detail screen. Icon-only, so this text is also its VoiceOver label.",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zu Favoriten hinzufügen"
+          }
+        }
+      }
     },
-    "Couldn't reach GitHub. Check your connection and try again." : {
-
+    "Couldn't reach GitHub. Check your connection and try again.": {
+      "comment": "Error shown on the search screen when the request never reached GitHub — offline, DNS failure, timeout.",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "GitHub ist nicht erreichbar. Prüfe deine Verbindung und versuche es erneut."
+          }
+        }
+      }
     },
-    "Favorites" : {
-
+    "Favorites": {
+      "comment": "Title of the Favorites tab and of that screen's navigation bar.",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Favoriten"
+          }
+        }
+      }
     },
-    "Find repositories by name, topic, or language." : {
-
+    "Find repositories by name, topic, or language.": {
+      "comment": "Body text of the empty state on the search screen, shown before any search has run.",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Finde Repositories nach Name, Thema oder Sprache."
+          }
+        }
+      }
     },
-    "Forks" : {
-
+    "Forks": {
+      "comment": "Row label on the repository detail screen, beside the fork count. GitHub term of art; usually left untranslated.",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Forks"
+          }
+        }
+      }
     },
-    "GitHub had a problem (HTTP %lld). Try again shortly." : {
-
+    "GitHub had a problem (HTTP %lld). Try again shortly.": {
+      "comment": "Error shown on the search screen for an unexpected server response. The number is an HTTP status code and must stay as digits.",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bei GitHub ist ein Fehler aufgetreten (HTTP %lld). Versuche es in Kürze erneut."
+          }
+        }
+      }
     },
-    "GitHub is rate-limiting searches right now. Give it a minute." : {
-
+    "GitHub is rate-limiting searches right now. Give it a minute.": {
+      "comment": "Error shown on the search screen when GitHub's API rate limit has been hit. Implies waiting will fix it.",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "GitHub drosselt derzeit die Suchanfragen. Warte einen Moment."
+          }
+        }
+      }
     },
-    "GitHub sent a response this app couldn't read." : {
-
+    "GitHub sent a response this app couldn't read.": {
+      "comment": "Error shown on the search screen when GitHub's reply arrived but could not be decoded.",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "GitHub hat eine Antwort gesendet, die diese App nicht lesen konnte."
+          }
+        }
+      }
     },
-    "Language" : {
-
+    "Language": {
+      "comment": "Row label on the repository detail screen, beside the repository's primary programming language.",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sprache"
+          }
+        }
+      }
     },
-    "No favorites yet" : {
-
+    "No favorites yet": {
+      "comment": "Title of the empty state on the Favorites tab, shown when nothing has been favorited.",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Noch keine Favoriten"
+          }
+        }
+      }
     },
-    "Owner" : {
-
+    "Owner": {
+      "comment": "Row label on the repository detail screen, beside the GitHub account that owns the repository.",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Eigentümer"
+          }
+        }
+      }
     },
-    "Remove from Favorites" : {
-
+    "Remove from Favorites": {
+      "comment": "Toolbar button on the repository detail screen when the repository is already a favorite. Icon-only, so this text is also its VoiceOver label.",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aus Favoriten entfernen"
+          }
+        }
+      }
     },
-    "RepoScout" : {
-
+    "RepoScout": {
+      "comment": "Navigation bar title of the search screen. The app's own name — a proper noun, do not translate.",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "RepoScout"
+          }
+        }
+      }
     },
-    "Repositories you favorite will appear here." : {
-
+    "Repositories you favorite will appear here.": {
+      "comment": "Body text of the empty state on the Favorites tab.",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Repositories, die du als Favorit markierst, erscheinen hier."
+          }
+        }
+      }
     },
-    "Retry" : {
-
+    "Retry": {
+      "comment": "Button in the search screen's error state; re-runs the search that failed.",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Erneut versuchen"
+          }
+        }
+      }
     },
-    "Search" : {
-
+    "Search": {
+      "comment": "Title of the Search tab.",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Suchen"
+          }
+        }
+      }
     },
-    "Search GitHub" : {
-
+    "Search GitHub": {
+      "comment": "Title of the empty state on the search screen, shown before any search has run.",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "GitHub durchsuchen"
+          }
+        }
+      }
     },
-    "Search GitHub repositories" : {
-
+    "Search GitHub repositories": {
+      "comment": "Placeholder text inside the search field.",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "GitHub-Repositories durchsuchen"
+          }
+        }
+      }
     },
-    "Searching…" : {
-
+    "Searching…": {
+      "comment": "Label beside the spinner shown while a first search is in flight.",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Suche läuft …"
+          }
+        }
+      }
     },
-    "Something went wrong" : {
-
+    "Something went wrong": {
+      "comment": "Title of the error state on the search screen.",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Etwas ist schiefgelaufen"
+          }
+        }
+      }
     },
-    "Something went wrong. Please try again." : {
-
+    "Something went wrong. Please try again.": {
+      "comment": "Fallback error message shown on the search screen when a failure carries no more specific description.",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Etwas ist schiefgelaufen. Bitte versuche es erneut."
+          }
+        }
+      }
     },
-    "Stars" : {
-
+    "Stars": {
+      "comment": "Row label on the repository detail screen, beside the star count.",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sterne"
+          }
+        }
+      }
     },
-    "Stats" : {
-
+    "Stats": {
+      "comment": "Section header on the repository detail screen, above the stars, forks, language and owner rows.",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Statistiken"
+          }
+        }
+      }
     },
-    "That search can't be sent. Try different text." : {
-
+    "That search can't be sent. Try different text.": {
+      "comment": "Error shown on the search screen when GitHub rejects the query text itself as malformed.",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Diese Suche kann nicht gesendet werden. Versuche einen anderen Text."
+          }
+        }
+      }
     },
-    "Updated %llds ago" : {
-
+    "Updated %lld seconds ago": {
+      "comment": "Footer under the search results list, showing how long ago the results arrived. Has plural variations.",
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Updated %lld second ago"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Updated %lld seconds ago"
+                }
+              }
+            }
+          }
+        },
+        "de": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Vor %lld Sekunde aktualisiert"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Vor %lld Sekunden aktualisiert"
+                }
+              }
+            }
+          }
+        }
+      }
     },
-    "View on GitHub" : {
-
+    "View on GitHub": {
+      "comment": "Link on the repository detail screen; opens the repository's page in a browser.",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Auf GitHub ansehen"
+          }
+        }
+      }
     }
   },
-  "version" : "1.0"
+  "version": "1.0"
 }

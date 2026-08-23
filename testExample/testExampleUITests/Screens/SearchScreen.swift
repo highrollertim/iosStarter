@@ -17,19 +17,31 @@ struct SearchScreen {
         app.searchFields.firstMatch
     }
 
-    // Identified by its visible text rather than an accessibility
-    // identifier: `ContentUnavailableView` re-parents a container-level
-    // identifier onto every descendant it merges, so there's no reliable
-    // container identifier to query by here. The heading text is stable and
-    // honestly describes the state under test.
+    /// The error state's description text, identified rather than read.
+    ///
+    /// This used to match the literal string "Something went wrong", which
+    /// worked exactly as long as the app had one language. `SearchView` now
+    /// puts `search.errorView` on the description `Text` itself — not on the
+    /// `ContentUnavailableView`, whose container identifier gets re-parented
+    /// onto its merged children — so this query survives `-testLanguage de`.
     var errorView: XCUIElement {
-        app.staticTexts["Something went wrong"]
+        app.descendants(matching: .any)["search.errorView"].firstMatch
     }
 
     /// `ContentUnavailableView.search(text:)` renders its title as
     /// `No Results for “swift”` — the query is interpolated, with typographic
     /// quotes that vary by locale. Matched by prefix so the assertion tests
     /// the *state*, not the app's choice of quotation marks.
+    ///
+    /// **This query is locale-bound and there is no app-side fix.** The title
+    /// is a *system* string owned by `ContentUnavailableView.search(text:)`;
+    /// under `-testLanguage de` it reads "Keine Ergebnisse für …" and this
+    /// predicate finds nothing. The only ways out are to stop using the
+    /// system's empty-search view (losing the reason it is here) or to
+    /// hard-code a translation table of Apple's own strings, which would be
+    /// wrong the next time Apple rewords it. The suite is therefore written
+    /// to run in the development language; the German run is a localization
+    /// smoke check (see `LaunchTests`), not a full-suite target.
     var noResultsView: XCUIElement {
         app.staticTexts
             .matching(NSPredicate(format: "label BEGINSWITH %@", "No Results"))

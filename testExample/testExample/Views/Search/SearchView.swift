@@ -73,6 +73,16 @@ struct SearchView: View {
                 Label("Something went wrong", systemImage: "exclamationmark.triangle")
             } description: {
                 Text(message)
+                    // On the *description*, not on the ContentUnavailableView:
+                    // a container-level identifier here gets re-parented onto
+                    // every child the view merges, which is what was clobbering
+                    // "search.retryButton" below. Identifying the one leaf that
+                    // is genuinely the error message gives UI tests something
+                    // locale-independent to assert on — the previous query
+                    // matched the literal English "Something went wrong", and
+                    // stopped matching the moment the app grew a second
+                    // language.
+                    .accessibilityIdentifier("search.errorView")
             } actions: {
                 Button("Retry") {
                     viewModel.retry()

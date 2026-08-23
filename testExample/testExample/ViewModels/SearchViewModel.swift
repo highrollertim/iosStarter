@@ -220,13 +220,24 @@ final class SearchViewModel {
         // it should never fire, but a clamped 0 beats "Updated -1s ago" if
         // the wall clock ever moves backwards under us.
         let seconds = max(0, Int(now.timeIntervalSince(lastRefreshed)))
-        return String(localized: "Updated \(seconds)s ago")
+        // Spelled out ("42 seconds") rather than abbreviated ("42s") because
+        // this string has plural variations in the catalog, and a language
+        // that inflects the *noun* needs a noun to inflect. English gets away
+        // with "42s" for every count; German, Russian and Arabic do not, and
+        // an abbreviation gives their translators nothing to work with.
+        return String(
+            localized: "Updated \(seconds) seconds ago",
+            comment: "Footer under the search results list, showing how long ago the results arrived. Has plural variations."
+        )
     }
 
     private func userFacingMessage(for error: any Error) -> String {
         if let localized = (error as? LocalizedError)?.errorDescription {
             return localized
         }
-        return String(localized: "Something went wrong. Please try again.")
+        return String(
+            localized: "Something went wrong. Please try again.",
+            comment: "Fallback error message shown on the search screen when a failure carries no more specific description."
+        )
     }
 }

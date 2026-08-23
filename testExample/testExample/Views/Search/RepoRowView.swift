@@ -87,13 +87,25 @@ struct RepoRowView: View {
         let stars = repo.stargazersCount.formatted()
         switch (repo.language, repo.summary) {
         case let (language?, summary?):
-            return String(localized: "\(repo.fullName), \(stars) stars, written in \(language). \(summary)")
+            return String(
+                localized: "\(repo.fullName), \(stars) stars, written in \(language). \(summary)",
+                comment: "VoiceOver label for one search result. Placeholders in order: repository name (owner/repo), star count already formatted for the locale, programming language, one-line description."
+            )
         case let (language?, nil):
-            return String(localized: "\(repo.fullName), \(stars) stars, written in \(language).")
+            return String(
+                localized: "\(repo.fullName), \(stars) stars, written in \(language).",
+                comment: "VoiceOver label for a search result with no description. Placeholders in order: repository name (owner/repo), star count already formatted for the locale, programming language."
+            )
         case let (nil, summary?):
-            return String(localized: "\(repo.fullName), \(stars) stars. \(summary)")
+            return String(
+                localized: "\(repo.fullName), \(stars) stars. \(summary)",
+                comment: "VoiceOver label for a search result with no detected language. Placeholders in order: repository name (owner/repo), star count already formatted for the locale, one-line description."
+            )
         case (nil, nil):
-            return String(localized: "\(repo.fullName), \(stars) stars.")
+            return String(
+                localized: "\(repo.fullName), \(stars) stars.",
+                comment: "VoiceOver label for a search result with neither a language nor a description. Placeholders in order: repository name (owner/repo), star count already formatted for the locale."
+            )
         }
     }
 }
