@@ -2,8 +2,8 @@
 <!--
   Source for RepoScout-Guide.pdf (repo root).
   Render with headless Chrome:
-    chrome ‑‑headless ‑‑disable-gpu ‑‑no-pdf-header-footer \
-      ‑‑print-to-pdf=RepoScout-Guide.pdf docs/guide/reposcout-guide.html
+    chrome --headless --disable-gpu --no-pdf-header-footer \
+      --print-to-pdf=RepoScout-Guide.pdf docs/guide/reposcout-guide.html
   Keep this file and the PDF in sync: edit here, re-render, commit both.
 -->
 <html lang="en">
@@ -274,7 +274,7 @@ keystroke <span class="arrow">→</span> .searchable binding <span class="arrow"
     <span class="kw">func</span> <span class="fn">searchRepositories</span>(matching query: String) <span class="kw">async throws</span> -&gt; [Repo]
 }</code></pre>
 
-<p>One method, async, returning domain models. Seven conformances exist across the project: the production client, the DEBUG mock actor, and five actor-based test doubles (Section 14) — and nothing downstream can tell them apart. That substitutability <em>is</em> the testing strategy.</p>
+<p>One method, async, returning domain models. Eight conformances exist across the project: the production client, the DEBUG mock actor, and six actor-based test doubles (Section 14) — and nothing downstream can tell them apart. That substitutability <em>is</em> the testing strategy.</p>
 
 <h3>The live client</h3>
 <p><code>LiveGitHubClient</code> builds a real <code>URLRequest</code>: 15-second timeout, <code>Accept: application/vnd.github+json</code>, and a <code>User-Agent</code> (which GitHub requires). Two details the audits sharpened:</p>
@@ -424,7 +424,8 @@ keystroke <span class="arrow">→</span> .searchable binding <span class="arrow"
 <li><code>SpyGitHubClient</code> — records queries, returns a canned result.</li>
 <li><code>ScriptedGitHubClient</code> — a per-call result script; the mechanism behind the Retry-recovers test.</li>
 <li><code>GatedGitHubClient</code> / <code>KeyedGatedGitHubClient</code> — suspend requests on continuations until the test says <code>open()</code>, globally or per-query; both are cancellation-safe via <code>withTaskCancellationHandler</code> (including the pre-opened path).</li>
-<li><code>UncancellableGatedGitHubClient</code> — <strong>deliberately ignores cancellation.</strong> It exists because a cancellation-safe gate can never produce the scenario the post-await guard exists for: a <em>successful</em> response arriving on an already-cancelled task. The only double that can prove the stale result never lands is one that refuses to be cancelled. Its opposite number and it are, together, the codebase's best test-design lesson.</li>
+<li><code>UncancellableGatedGitHubClient</code> — <strong>deliberately ignores cancellation.</strong> It exists because a cancellation-safe gate can never produce the scenario the post-await guard exists for: a <em>successful</em> response arriving on an already-cancelled task. The only double that can prove the stale result never lands is one that refuses to be cancelled.</li>
+<li><code>RogueCancellationGitHubClient</code> — throws <code>CancellationError</code> on a task that was <em>never cancelled</em>: the forever-spinner regression's exact shape (Section 8), and the only double that can prove the catch asks the flag rather than the type. Together with its uncancellable sibling, the pair is the codebase's best test-design lesson: each exists to produce precisely the one input that distinguishes correct cancellation handling from plausible cancellation handling.</li>
 </ul>
 <p>Infrastructure honed by the audits: <code>poll(until:)</code> re-checks its condition once after the final sleep and <em>throws</em> on timeout (the earlier version recorded an Issue and carried on — a timed-out wait could fall through into further awaits and hang the test instead of failing it); <code>StubURLProtocol</code>'s handler sits behind a real <code>Mutex</code>, and <code>withStubbedClient</code> additionally serializes whole invocations process-wide — the <code>Mutex</code> removes the data race with URLSession's loader thread, the gate is what prevents two concurrent suites from answering each other's requests.</p>
 
@@ -486,7 +487,7 @@ keystroke <span class="arrow">→</span> .searchable binding <span class="arrow"
 <li><strong>State as a closed enum including the states everyone forgets</strong> — stale-while-revalidate <em>and</em> failure-that-keeps-your-work.</li>
 <li><strong>One funnel for every search</strong> — invariants made structural, not habitual.</li>
 <li><strong>Ask the flag, not the type</strong> — cancellation handling that survives errors lying about their origin.</li>
-<li><strong>The protocol seam is the testing strategy</strong> — seven conformances, no mocking framework.</li>
+<li><strong>The protocol seam is the testing strategy</strong> — eight conformances, no mocking framework.</li>
 <li><strong>Comments must be true under the actual build settings</strong> — both audits' deepest findings were confident prose on correct code; in a teaching codebase a wrong comment is the defect readers copy.</li>
 </ul>
 

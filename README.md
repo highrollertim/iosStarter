@@ -140,7 +140,9 @@ path for whatever your starting point is.
 
 `RepoScout-Guide.pdf`, at the repository root, is a rendered field guide to
 this codebase — the same ground as the two documents above, laid out for
-reading away from an editor.
+reading away from an editor. Its editable source lives at
+`docs/guide/reposcout-guide.html`, with the render command in its header;
+edit there, re-render, and commit both.
 
 ## A note on the project name
 

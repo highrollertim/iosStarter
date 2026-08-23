@@ -204,12 +204,17 @@ final class SearchViewModel {
 
         guard !Task.isCancelled else { return }
 
-        // Stale-while-revalidate: if results are already on screen, keep them
-        // there and just flag the refresh. Only a genuine first load blanks
-        // the screen to a spinner. This is the state the naive four-case load
-        // enum cannot express — see `LoadState`.
+        // Stale-while-revalidate: if results are on screen, keep them there
+        // and just flag the refresh — and "on screen" includes the results
+        // under a failure banner. Retry from that banner re-enters here with
+        // state `.failed(_, stale:)`; reading only `.loaded` would blank the
+        // exact results the banner promised to preserve, and a second failure
+        // would then drop them permanently. Only a genuine first load — no
+        // results anywhere in `state` — blanks the screen to a spinner.
         if case .loaded(let existing, _) = state {
             state = .loaded(existing, isRefreshing: true)
+        } else if case .failed(_, let stale?) = state, !stale.isEmpty {
+            state = .loaded(stale, isRefreshing: true)
         } else {
             state = .loading
         }

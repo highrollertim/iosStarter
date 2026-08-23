@@ -126,6 +126,37 @@ struct SearchViewModelTests {
         ))
     }
 
+    @Test("retrying from the failure banner keeps the stale results, even through a second failure")
+    func retryFromFailureBannerPreservesStaleResults() async throws {
+        // The banner's Retry re-enters `search` with state `.failed(_, stale:)`.
+        // The stale-while-revalidate promotion must read that shape too:
+        // reading only `.loaded` would blank the results the banner promised
+        // to preserve, and a second failure would then drop them permanently.
+        let client = ScriptedGitHubClient(
+            script: [.success(.fixture), .failure(.rateLimited), .failure(.network)]
+        )
+        let viewModel = SearchViewModel(client: client, debounceInterval: Self.neverFires)
+
+        await viewModel.dispatch("swift").value
+        await viewModel.dispatch("swiftui").value
+        guard case .failed(_, .some) = viewModel.state else {
+            Issue.record("Expected a failure carrying stale results, got \(viewModel.state)")
+            return
+        }
+
+        // The user taps Retry in the banner. `retry()` delegates to
+        // `dispatch(searchText)`; calling `dispatch` directly is the same
+        // funnel with an awaitable task, minus the field bookkeeping this
+        // test never set up. The second failure must still carry the
+        // original results forward.
+        await viewModel.dispatch("swiftui").value
+
+        #expect(viewModel.state == .failed(
+            message: GitHubClientError.network.errorDescription ?? "",
+            stale: .fixture
+        ))
+    }
+
     @Test("a first-load failure has nothing to keep")
     func firstLoadFailureCarriesNoStaleResults() async throws {
         // The other half of the same rule, and what selects the full-screen

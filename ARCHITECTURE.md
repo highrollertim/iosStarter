@@ -566,7 +566,7 @@ when every string gets longer.
 Almost all of the UI suite survives that, because it queries by accessibility
 identifier: screens, rows, the error text, and — since `Tab` carries an
 `.accessibilityIdentifier` onto the tab-bar button it produces — the tabs.
-Three assertions cannot, because they match strings **Apple** owns and
+Four test cases cannot, because they match three strings **Apple** owns and
 translates: `ContentUnavailableView.search(text:)`'s "No Results" title,
 `EditButton`'s "Edit" together with the "Delete" confirmation it leads to, and
 `UISearchTextField`'s "Clear text" button (matched only to *suppress* an
