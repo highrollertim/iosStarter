@@ -21,6 +21,12 @@ struct FavoritesStoreTests {
              language: "Swift", htmlURL: URL(string: "https://github.com/octo/sample")!)
     }
 
+    private func repo(id: Int) -> Repo {
+        Repo(id: id, fullName: "octo/sample-\(id)", ownerLogin: "octo",
+             summary: nil, stargazersCount: id, forksCount: 0,
+             language: nil, htmlURL: URL(string: "https://github.com/octo/sample-\(id)")!)
+    }
+
     @Test("toggling an unknown repo favorites it")
     func toggleAdds() throws {
         let context = try makeContext()
@@ -28,7 +34,9 @@ struct FavoritesStoreTests {
 
         try store.toggle(sampleRepo)
 
-        #expect(store.isFavorite(sampleRepo))
+        // `try`, not `try?`: a fetch failure is a test failure, not a "no".
+        // That distinction is the whole reason `isFavorite` throws now.
+        #expect(try store.isFavorite(sampleRepo))
         #expect(try context.fetchCount(FetchDescriptor<FavoriteRepo>()) == 1)
     }
 
@@ -40,7 +48,7 @@ struct FavoritesStoreTests {
         try store.toggle(sampleRepo)
         try store.toggle(sampleRepo)
 
-        #expect(!store.isFavorite(sampleRepo))
+        #expect(try !store.isFavorite(sampleRepo))
         #expect(try context.fetchCount(FetchDescriptor<FavoriteRepo>()) == 0)
     }
 
@@ -66,5 +74,43 @@ struct FavoritesStoreTests {
         try store.remove(saved)
 
         #expect(try context.fetchCount(FetchDescriptor<FavoriteRepo>()) == 0)
+    }
+
+    @Test("batch remove deletes every given favorite in one save")
+    func batchRemoveDeletesAll() throws {
+        let context = try makeContext()
+        let store = FavoritesStore(context: context)
+        for id in 1...4 {
+            try store.toggle(repo(id: id))
+        }
+        let saved = try context.fetch(FetchDescriptor<FavoriteRepo>())
+        #expect(saved.count == 4)
+
+        // Three in one call — the shape `FavoritesView.delete(at:)` produces
+        // when the user deletes a multi-row selection.
+        try store.remove(saved.prefix(3))
+
+        let remaining = try context.fetch(FetchDescriptor<FavoriteRepo>())
+        #expect(remaining.count == 1)
+        #expect(remaining.first?.repoID == saved.last?.repoID)
+        // `hasChanges` false confirms the single `save()` inside `remove`
+        // actually committed all three deletions rather than leaving some
+        // pending in the context.
+        #expect(!context.hasChanges)
+    }
+
+    @Test("inserting two records with the same unique repoID collapses to one")
+    func duplicateUniqueIDCollapses() throws {
+        // Pins down what `@Attribute(.unique)` actually does here rather than
+        // assuming it. The app never relies on this — `FavoritesStore`
+        // fetches before it inserts (see `existingFavorite(for:)`) — but the
+        // constraint is the safety net behind that logic, and a safety net
+        // whose behaviour nobody has checked is just a comment.
+        let context = try makeContext()
+        context.insert(FavoriteRepo(repo: sampleRepo))
+        context.insert(FavoriteRepo(repo: sampleRepo))
+        try context.save()
+
+        #expect(try context.fetchCount(FetchDescriptor<FavoriteRepo>()) == 1)
     }
 }

@@ -8,6 +8,13 @@ import Testing
 @Suite("SearchViewModel state transitions")
 struct SearchViewModelTests {
 
+    /// A debounce long enough that the Combine pipeline provably cannot fire
+    /// during a test. Used by the tests that drive `search`/`retry` directly
+    /// and only set `searchText` so `retry()` has something to re-run —
+    /// without it, `searchText`'s `didSet` would race a second, unwanted
+    /// request into the assertions.
+    private static let neverFires: DispatchQueue.SchedulerTimeType.Stride = .seconds(30)
+
     @Test("successful search moves loading → loaded")
     func successMovesThroughLoadingToLoaded() async throws {
         let gate = GatedGitHubClient(repos: .fixture)
@@ -19,7 +26,7 @@ struct SearchViewModelTests {
         await gate.open()
         await search.value
 
-        #expect(viewModel.state == .loaded(.fixture))
+        #expect(viewModel.state == .loaded(.fixture, isRefreshing: false))
         #expect(viewModel.lastRefreshed != nil)
     }
 
@@ -42,6 +49,33 @@ struct SearchViewModelTests {
 
         #expect(viewModel.state == .idle)
         #expect(await spy.queries.isEmpty)
+    }
+
+    @Test("refining a loaded search keeps the stale results on screen")
+    func refiningKeepsStaleResultsVisible() async throws {
+        let staleResult: [Repo] = [
+            Repo(id: 2, fullName: "stale/repo", ownerLogin: "stale", summary: nil,
+                 stargazersCount: 0, forksCount: 0, language: nil,
+                 htmlURL: URL(string: "https://github.com/stale/repo")!)
+        ]
+        let client = KeyedGatedGitHubClient(repos: ["swif": staleResult, "swift": .fixture])
+        let viewModel = SearchViewModel(client: client)
+
+        await client.open("swif")
+        await viewModel.search(matching: "swif")
+        #expect(viewModel.state == .loaded(staleResult, isRefreshing: false))
+
+        // The refinement is in flight. This is the state a four-case
+        // `LoadState` cannot express: the previous query's rows are still the
+        // right thing to show, and blanking them to a spinner on every
+        // keystroke is the bug `isRefreshing` exists to prevent.
+        let refinement = Task { await viewModel.search(matching: "swift") }
+        try await poll(until: { await client.isPending("swift") }, message: "refinement in flight")
+        #expect(viewModel.state == .loaded(staleResult, isRefreshing: true))
+
+        await client.open("swift")
+        await refinement.value
+        #expect(viewModel.state == .loaded(.fixture, isRefreshing: false))
     }
 
     @Test("a cancelled search cannot clobber a newer search's result")
@@ -70,28 +104,73 @@ struct SearchViewModelTests {
         let secondSearch = Task { await viewModel.search(matching: "second") }
         await secondSearch.value
 
-        #expect(viewModel.state == .loaded(freshResult))
+        #expect(viewModel.state == .loaded(freshResult, isRefreshing: false))
 
-        // Only now release the stale, already-cancelled first request.
-        // `search(matching:)`'s `Task.isCancelled` guard (checked right
-        // after the `try await` succeeds) must discard this late arrival
-        // rather than let it clobber the newer state.
+        // `KeyedGatedGitHubClient` honours cancellation (it wraps its
+        // continuation in a `withTaskCancellationHandler`), so the cancelled
+        // first call throws `CancellationError` rather than parking forever.
+        // What this asserts is therefore `search(matching:)`'s
+        // `catch is CancellationError` branch: a superseded request must exit
+        // silently, leaving the newer result — and *not* a `.failed` state —
+        // on screen. The complementary guard, for clients that ignore
+        // cancellation entirely, is covered by
+        // `lateResultFromCancelledTaskIsDiscarded` below.
         await client.open("first")
         await firstSearch.value
 
-        #expect(viewModel.state == .loaded(freshResult))
+        #expect(viewModel.state == .loaded(freshResult, isRefreshing: false))
     }
 
-    @Test("startTicker() advances `now`; stopTicker() stops further updates")
-    func tickerStartsAndStops() async throws {
+    @Test("a client that ignores cancellation still can't clobber state")
+    func lateResultFromCancelledTaskIsDiscarded() async throws {
+        let staleResult: [Repo] = [
+            Repo(id: 3, fullName: "late/repo", ownerLogin: "late", summary: nil,
+                 stargazersCount: 0, forksCount: 0, language: nil,
+                 htmlURL: URL(string: "https://github.com/late/repo")!)
+        ]
+        let client = UncancellableGatedGitHubClient(repos: staleResult)
+        let viewModel = SearchViewModel(client: client)
+
+        let search = Task { await viewModel.search(matching: "late") }
+        try await poll(until: { await client.isPending }, message: "request in flight")
+        #expect(viewModel.state == .loading)
+
+        // Cancel, then let the client succeed anyway — exactly what a
+        // third-party client that never checks `Task.isCancelled` does.
+        search.cancel()
+        await client.open()
+        await search.value
+
+        // The post-`await` guard in `search(matching:)` is the only thing
+        // between that late success and the screen. State must not have
+        // advanced to `.loaded`.
+        #expect(viewModel.state == .loading)
+    }
+
+    @Test("startTicker() seeds `now` immediately, then advances it; stopTicker() stops updates")
+    func tickerSeedsStartsAndStops() async throws {
         let spy = SpyGitHubClient(result: .success(.fixture))
         let viewModel = SearchViewModel(client: spy)
-        let initialNow = viewModel.now
+        let nowAtInit = viewModel.now
 
+        // Let the clock move on while the ticker is *not* running, the way it
+        // does while the user is on another tab.
+        try await Task.sleep(for: .milliseconds(50))
+        let beforeStart = Date.now
         viewModel.startTicker()
+
+        // Asserted synchronously, before any tick can have happened:
+        // `Timer.publish(every: 1, ...)` doesn't emit for a whole second, so
+        // the only thing that can have moved `now` is the seed in
+        // `startTicker()`. Without it the footer showed a stale
+        // "Updated 0s ago" for that whole second after returning to the tab.
+        #expect(viewModel.now >= beforeStart)
+        #expect(viewModel.now > nowAtInit)
+
+        let seeded = viewModel.now
         // `Timer.publish(every: 1, ...)` ticks on wall-clock seconds, so give
         // it a few seconds of headroom rather than racing the first tick.
-        try await poll(until: { viewModel.now != initialNow }, timeout: .seconds(4), message: "now to advance after startTicker()")
+        try await poll(until: { viewModel.now != seeded }, timeout: .seconds(4), message: "now to advance after the seed")
 
         viewModel.stopTicker()
         let stoppedNow = viewModel.now
@@ -119,21 +198,109 @@ struct SearchViewModelTests {
         viewModel.searchText = "sw"
         viewModel.searchText = "swift"
 
-        try await poll(until: { viewModel.state == .loaded(.fixture) }, message: "state == .loaded")
+        try await poll(until: { viewModel.state == .loaded(.fixture, isRefreshing: false) }, message: "state == .loaded")
         #expect(await spy.queries == ["swift"])
     }
 
-    @Test("unchanged text does not re-search (removeDuplicates)")
-    func unchangedTextDoesNotResearch() async throws {
+    @Test("after a success, re-submitting the same text does not re-search")
+    func unchangedTextDoesNotResearchAfterSuccess() async throws {
         let spy = SpyGitHubClient(result: .success(.fixture))
         let viewModel = SearchViewModel(client: spy, debounceInterval: .milliseconds(50))
 
         viewModel.searchText = "swift"
-        try await poll(until: { viewModel.state == .loaded(.fixture) }, message: "first load")
+        try await poll(until: { viewModel.state == .loaded(.fixture, isRefreshing: false) }, message: "first load")
 
+        // Re-assigning the same value still fires `searchText`'s `didSet`, so
+        // the pipeline genuinely sees a second "swift". It is the
+        // `lastDispatchedQuery` filter — not `removeDuplicates()`, which is
+        // gone — that drops it.
         viewModel.searchText = "swift"
         // Give the pipeline time to (wrongly) fire again before asserting.
         try await Task.sleep(for: .milliseconds(200))
+        #expect(await spy.queries == ["swift"])
+    }
+
+    @Test("after a failure, re-submitting the same text does re-search")
+    func sameTextResearchesAfterFailure() async throws {
+        // The bug `removeDuplicates()` shipped: a search that failed was
+        // literally unrepeatable by typing. The user had to change the text
+        // and change it back to get another attempt at the identical query.
+        let client = ScriptedGitHubClient(
+            script: [.failure(.rateLimited), .success(.fixture)]
+        )
+        let viewModel = SearchViewModel(client: client, debounceInterval: .milliseconds(50))
+
+        viewModel.searchText = "swift"
+        try await poll(
+            until: { viewModel.state == .failed(message: GitHubClientError.rateLimited.errorDescription ?? "") },
+            message: "first attempt to fail"
+        )
+
+        viewModel.searchText = "swift"
+        try await poll(
+            until: { viewModel.state == .loaded(.fixture, isRefreshing: false) },
+            message: "the identical query to run again"
+        )
+        #expect(await client.queries == ["swift", "swift"])
+    }
+
+    @Test("retry() re-runs the failed query and can recover")
+    func retryRecoversFromFailure() async throws {
+        let client = ScriptedGitHubClient(
+            script: [.failure(.rateLimited), .success(.fixture)]
+        )
+        let viewModel = SearchViewModel(client: client, debounceInterval: Self.neverFires)
+        viewModel.searchText = "swift"
+
+        await viewModel.search(matching: "swift")
+        #expect(viewModel.state == .failed(message: GitHubClientError.rateLimited.errorDescription ?? ""))
+
+        viewModel.retry()
+        try await poll(
+            until: { viewModel.state == .loaded(.fixture, isRefreshing: false) },
+            message: "retry to succeed"
+        )
+        #expect(await client.queries == ["swift", "swift"])
+    }
+
+    @Test("retry() with a cleared search field returns to idle")
+    func retryAfterClearingGoesIdle() async throws {
+        // Documents a real edge: the error view stays on screen while the
+        // user empties the search field, so Retry can be tapped with nothing
+        // to search for. The right answer is the idle prompt, not a request
+        // for the empty string.
+        let client = ScriptedGitHubClient(script: [.failure(.rateLimited)])
+        let viewModel = SearchViewModel(client: client, debounceInterval: Self.neverFires)
+        viewModel.searchText = "swift"
+
+        await viewModel.search(matching: "swift")
+        #expect(viewModel.state == .failed(message: GitHubClientError.rateLimited.errorDescription ?? ""))
+
+        viewModel.searchText = ""
+        viewModel.retry()
+
+        try await poll(until: { viewModel.state == .idle }, message: "state == .idle")
+        #expect(await client.queries == ["swift"])
+    }
+
+    @Test("submitImmediately() bypasses the debounce and de-dupes the pending emission")
+    func submitImmediatelyBypassesDebounce() async throws {
+        let spy = SpyGitHubClient(result: .success(.fixture))
+        // Long enough that the pipeline's own emission lands well after the
+        // manual submit, which is the race `submitImmediately()` has to win.
+        let viewModel = SearchViewModel(client: spy, debounceInterval: .milliseconds(200))
+
+        viewModel.searchText = "swift"
+        viewModel.submitImmediately()
+
+        try await poll(
+            until: { viewModel.state == .loaded(.fixture, isRefreshing: false) },
+            message: "the immediate submit to land"
+        )
+        // The debounce emission for "swift" is still pending here; wait it
+        // out and confirm the filter dropped it instead of firing a second
+        // identical request.
+        try await Task.sleep(for: .milliseconds(400))
         #expect(await spy.queries == ["swift"])
     }
 }
