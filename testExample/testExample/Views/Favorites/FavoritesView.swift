@@ -37,6 +37,9 @@ struct FavoritesView: View {
                         description: Text("Repositories you favorite will appear here.")
                     )
                     .accessibilityIdentifier("favorites.emptyView")
+                    // The overlay is informational; it must never intercept a
+                    // tap aimed at a row that is still animating out beneath it.
+                    .allowsHitTesting(false)
                 }
             }
             .navigationTitle("Favorites")
@@ -47,8 +50,12 @@ struct FavoritesView: View {
                 // express "swipe this row partway left". `EditButton` gives
                 // the same operation a discoverable, focusable control.
                 // (It also gives UI tests something to tap that doesn't
-                // depend on synthesizing a swipe.)
-                EditButton()
+                // depend on synthesizing a swipe.) Hidden while the list is
+                // empty: an enabled Edit button over nothing to edit is a
+                // control with no possible effect.
+                if !favorites.isEmpty {
+                    EditButton()
+                }
             }
             .navigationDestination(for: Repo.self) { repo in
                 RepoDetailView(repo: repo)

@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<!--
+  Source for RepoScout-Guide.pdf (repo root).
+  Render with headless Chrome:
+    chrome ‑‑headless ‑‑disable-gpu ‑‑no-pdf-header-footer \
+      ‑‑print-to-pdf=RepoScout-Guide.pdf docs/guide/reposcout-guide.html
+  Keep this file and the PDF in sync: edit here, re-render, commit both.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>RepoScout — A Field Guide to the Codebase</title>
+<style>
+  @page {
+    size: letter;
+    margin: 22mm 18mm 20mm 18mm;
+  }
+  * { box-sizing: border-box; }
+  html { font-size: 10.5pt; }
+  body {
+    font-family: "Avenir Next", "Helvetica Neue", Helvetica, Arial, sans-serif;
+    color: #1a1d21;
+    line-height: 1.55;
+    margin: 0;
+  }
+  h1, h2, h3, h4 { font-family: "Avenir Next", "Helvetica Neue", sans-serif; line-height: 1.25; }
+  h1 { font-size: 26pt; font-weight: 700; margin: 0 0 4pt 0; }
+  h2 {
+    font-size: 15pt; font-weight: 700; margin: 26pt 0 8pt 0;
+    padding-bottom: 4pt; border-bottom: 2px solid #0f6db2;
+    break-after: avoid;
+  }
+  h3 { font-size: 12pt; font-weight: 600; margin: 16pt 0 6pt 0; break-after: avoid; }
+  p { margin: 0 0 8pt 0; }
+  .section-num { color: #0f6db2; margin-right: 6pt; }
+  code {
+    font-family: "SF Mono", Menlo, Consolas, monospace;
+    font-size: 8.8pt;
+    background: #f1f4f7;
+    padding: 0.5pt 3pt;
+    border-radius: 3px;
+  }
+  pre {
+    font-family: "SF Mono", Menlo, Consolas, monospace;
+    font-size: 8.3pt;
+    line-height: 1.45;
+    background: #f7f9fb;
+    border: 1px solid #dde4ea;
+    border-left: 3px solid #0f6db2;
+    border-radius: 4px;
+    padding: 8pt 10pt;
+    overflow-x: hidden;
+    white-space: pre-wrap;
+    break-inside: avoid;
+    margin: 6pt 0 10pt 0;
+  }
+  pre code { background: none; padding: 0; font-size: inherit; }
+  table {
+    border-collapse: collapse;
+    width: 100%;
+    margin: 8pt 0 12pt 0;
+    font-size: 9pt;
+    break-inside: avoid;
+  }
+  th {
+    text-align: left;
+    background: #0f6db2;
+    color: #fff;
+    padding: 4pt 7pt;
+    font-weight: 600;
+  }
+  td {
+    padding: 4pt 7pt;
+    border-bottom: 1px solid #dde4ea;
+    vertical-align: top;
+  }
+  tr:nth-child(even) td { background: #f7f9fb; }
+  .cover {
+    height: 235mm;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+  }
+  .cover .rule { width: 60mm; height: 3pt; background: #0f6db2; margin: 10pt 0 14pt 0; }
+  .cover .subtitle { font-size: 14pt; color: #4a5763; margin-bottom: 22pt; }
+  .cover .meta { font-size: 9.5pt; color: #6b7783; line-height: 1.8; }
+  .pagebreak { break-before: page; }
+  .callout {
+    background: #eef6fc;
+    border: 1px solid #bcd9ee;
+    border-left: 3px solid #0f6db2;
+    border-radius: 4px;
+    padding: 7pt 10pt;
+    margin: 8pt 0 10pt 0;
+    font-size: 9.3pt;
+    break-inside: avoid;
+  }
+  .callout .label { font-weight: 700; color: #0f6db2; }
+  .warn {
+    background: #fdf3e7;
+    border-color: #ecc9a0;
+    border-left-color: #c87d2f;
+  }
+  .warn .label { color: #b06a1f; }
+  ul, ol { margin: 0 0 8pt 0; padding-left: 16pt; }
+  li { margin-bottom: 3pt; }
+  .toc { font-size: 10pt; }
+  .toc ol { list-style: none; padding-left: 0; counter-reset: toc; }
+  .toc li { counter-increment: toc; margin-bottom: 5pt; }
+  .toc li::before { content: counter(toc) ".  "; color: #0f6db2; font-weight: 700; }
+  .kw  { color: #a626a4; }
+  .ty  { color: #0f6db2; }
+  .str { color: #50841f; }
+  .cm  { color: #8a95a1; font-style: italic; }
+  .fn  { color: #b3560f; }
+  .flow {
+    font-family: "SF Mono", Menlo, monospace;
+    font-size: 8.6pt;
+    background: #f7f9fb;
+    border: 1px solid #dde4ea;
+    border-radius: 4px;
+    padding: 9pt 12pt;
+    line-height: 1.9;
+    break-inside: avoid;
+    margin: 6pt 0 10pt 0;
+  }
+  .flow .arrow { color: #0f6db2; font-weight: 700; }
+  .flow .note { color: #6b7783; font-size: 7.8pt; }
+</style>
+</head>
+<body>
+
+<!-- ================= COVER ================= -->
+<div class="cover">
+  <h1>RepoScout</h1>
+  <div class="rule"></div>
+  <div class="subtitle">A Field Guide to the Codebase<br>How every piece works, and why it was built that way</div>
+  <div class="meta">
+    A reference iOS application demonstrating 2026 best practices<br>
+    SwiftUI &nbsp;·&nbsp; Swift 6 concurrency (SE-0461) &nbsp;·&nbsp; Combine &nbsp;·&nbsp; SwiftData &nbsp;·&nbsp; Swift Testing &nbsp;·&nbsp; XCUITest with BDD activities<br><br>
+    Project: <code>testExample.xcodeproj</code> (product branded RepoScout, bundle ID <code>work.timmaher.RepoScout</code>)<br>
+    Requires Xcode 26.2+ &nbsp;·&nbsp; iOS 26.2 &nbsp;·&nbsp; iPhone &nbsp;·&nbsp; English + German, tested in both &nbsp;·&nbsp; Zero third-party dependencies &nbsp;·&nbsp; MIT<br><br>
+    Third edition — revised after two independent multi-angle audits; this document's source is committed at <code>docs/guide/</code><br>
+    August 2026
+  </div>
+</div>
+
+<!-- ================= TOC ================= -->
+<div class="pagebreak toc">
+<h2>Contents</h2>
+<ol>
+  <li>What RepoScout Is</li>
+  <li>Running the App and the Tests</li>
+  <li>The Map: Project Structure</li>
+  <li>The Life of a Search — an End-to-End Trace</li>
+  <li>The Model Layer: Three Shapes for One Repository</li>
+  <li>The Service Layer: a Protocol, Typed Errors, and Honest HTTP</li>
+  <li>LoadState: Stale-While-Revalidate and Failure That Keeps Your Work</li>
+  <li>SearchViewModel: One Funnel, One Dedup Key, One Scoped Ticker</li>
+  <li>The Views: Where Logic Was Deliberately Left Out</li>
+  <li>Persistence: SwiftData, @Query, and the Store Split</li>
+  <li>The Composition Root: Dependency Injection Without Magic</li>
+  <li>The Concurrency Model: Swift 6, SE-0461, and What "async" Actually Means Now</li>
+  <li>Combine's Role in 2026 — the Honest Boundary</li>
+  <li>Unit Testing with Swift Testing</li>
+  <li>UI Testing: BDD Scenarios, Two Languages, Audited Accessibility</li>
+  <li>Localization and Accessibility</li>
+  <li>Shipping Hygiene: the Parts That Aren't Code</li>
+  <li>Design Decisions, Trade-offs, and Known Edges</li>
+</ol>
+</div>
+
+<!-- ================= 1 ================= -->
+<h2><span class="section-num">1</span>What RepoScout Is</h2>
+
+<p>RepoScout is a small, complete iOS app: you search GitHub's public repository API, browse results, open a detail screen, and save favorites that persist locally. That functionality is deliberately modest — the app exists to be <em>read</em>, not shipped. Every file demonstrates how a professional iOS team would build this in 2026, and the doc comments explain the <em>why</em> behind each pattern.</p>
+
+<p>How to read this guide: Section 4 walks one keystroke through the entire system — read it first; every later section deepens one hop of that journey. Sections 5–11 are the design decisions worth stealing. Section 12 is the concurrency chapter — it explains SE-0461, the change to what <code>async</code> means that most material written before 2025 silently gets wrong. Sections 14–17 cover the testing and shipping practices that separate a demo from a product.</p>
+
+<div class="callout"><span class="label">Third edition.</span> This codebase has now been through two rounds of independent, adversarial audit (SwiftUI idiom currency, hostile concurrency review with compiler probes, and professional-completeness review including a native-quality pass over the German localization), each followed by a full remediation. Several sections teach lessons that exist <em>because</em> an audit caught an earlier version getting them wrong — those are told as "here is the mistake and why", because that is the most durable form of the lesson. This document's HTML source is committed at <code>docs/guide/</code>, so it can be corrected and re-rendered by anyone.</div>
+
+<div class="callout"><span class="label">Naming note.</span> The Xcode project, targets, and schemes are still named <code>testExample</code>; the product is RepoScout via display name, a real icon, and the bundle ID <code>work.timmaher.RepoScout</code>. Renaming a <code>pbxproj</code> is high-churn, low-value work; product identity and project naming are independent, and leaving them different demonstrates that.</div>
+
+<!-- ================= 2 ================= -->
+<h2><span class="section-num">2</span>Running the App and the Tests</h2>
+
+<p>Open <code>testExample/testExample.xcodeproj</code> in Xcode 26.2 or later and run the <code>testExample</code> scheme. The scheme is <strong>shared</strong> (committed under <code>xcshareddata/xcschemes/</code>), so these commands work on a fresh clone. All commands run from the <code>testExample/</code> directory that contains the <code>.xcodeproj</code>:</p>
+
+<pre><code>cd testExample
+
+# Unit tests (Swift Testing) — runs under the test plan, in English AND German
+xcodebuild test -project testExample.xcodeproj -scheme testExample \
+  -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \
+  -only-testing:testExampleTests
+
+# UI tests (XCUITest, BDD-style) — boots a simulator, slower
+xcodebuild test -project testExample.xcodeproj -scheme testExample \
+  -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \
+  -only-testing:testExampleUITests
+
+# Everything, both languages (~11 minutes)
+xcodebuild test -project testExample.xcodeproj -scheme testExample \
+  -destination 'platform=iOS Simulator,name=iPhone 17 Pro'</code></pre>
+
+<p>Substitute any installed simulator for the <code>name=</code> value. The scheme runs a committed <strong>test plan</strong> (<code>testExample.xctestplan</code>) with two configurations — English and German — so every test invocation exercises both localizations, with code coverage collected for the app target (about 90% across the full suite). The UI tests never touch the network: they launch the app with debug-only arguments (Section 11) that swap in a deterministic mock client and an in-memory database.</p>
+
+<!-- ================= 3 ================= -->
+<h2><span class="section-num">3</span>The Map: Project Structure</h2>
+
+<table>
+<tr><th>Path</th><th>Responsibility</th></tr>
+<tr><td><code>testExample/testExample/RepoScoutApp.swift</code></td><td><code>@main</code> entry point; owns <code>AppDependencies</code></td></tr>
+<tr><td><code>testExample/testExample/Models/</code></td><td><code>Repo</code> (domain model, incl. the <code>webURL</code> validation seam) and the network DTOs + one mapping</td></tr>
+<tr><td><code>testExample/testExample/Services/</code></td><td><code>GitHubClient</code> protocol, <code>GitHubClientError</code>, <code>LiveGitHubClient</code> (<code>@concurrent</code>), <code>MockGitHubClient</code> (DEBUG-only actor)</td></tr>
+<tr><td><code>testExample/testExample/Support/</code></td><td><code>LoadState</code>, <code>AppDependencies</code>, <code>PreviewSupport</code> (a <code>PreviewModifier</code>), nonisolated shared <code>Logger</code>s</td></tr>
+<tr><td><code>testExample/testExample/ViewModels/</code></td><td><code>SearchViewModel</code> — the app's only view model</td></tr>
+<tr><td><code>testExample/testExample/Persistence/</code></td><td><code>FavoriteRepo</code> (<code>@Model</code>) and <code>FavoritesStore</code> (write-side repository, batch-aware)</td></tr>
+<tr><td><code>testExample/testExample/Views/</code></td><td><code>RootView</code> (TabView), <code>Search/</code>, <code>Detail/</code>, <code>Favorites/</code></td></tr>
+<tr><td><code>testExample/testExample/Localizable.xcstrings</code></td><td>String Catalog — English + full German, plural substitutions, translator comments</td></tr>
+<tr><td><code>testExample/testExample/PrivacyInfo.xcprivacy</code></td><td>Privacy manifest (Section 17)</td></tr>
+<tr><td><code>testExample/testExample.xctestplan</code></td><td>Two-language test plan; app-scoped code coverage</td></tr>
+<tr><td><code>testExample/testExampleTests/</code>, <code>testExampleUITests/</code></td><td>Swift Testing suites + actor doubles; BDD UI tests + screen objects + accessibility audits</td></tr>
+<tr><td><code>.github/workflows/ci.yml</code>, <code>.swift-format</code></td><td>CI workflow (written for a future remote; see §17) and the house-style record</td></tr>
+<tr><td><code>README.md</code>, <code>ARCHITECTURE.md</code>, <code>LICENSE</code>, <code>docs/</code></td><td>Quick start, guided tour, MIT license, this guide's source, archived process reports</td></tr>
+</table>
+
+<p>The project uses Xcode's <em>synchronized folder groups</em>: any file placed in a target's folder on disk automatically joins that target — nobody edits <code>project.pbxproj</code> to add files.</p>
+
+<!-- ================= 4 ================= -->
+<h2><span class="section-num">4</span>The Life of a Search — an End-to-End Trace</h2>
+
+<p>Suppose the user types <code>"swift"</code> into the search field.</p>
+
+<div class="flow">
+keystroke <span class="arrow">→</span> .searchable binding <span class="arrow">→</span> SearchViewModel.searchText <span class="note">(didSet)</span><br>
+&nbsp;&nbsp;<span class="arrow">→</span> querySubject.send() <span class="arrow">→</span> Combine: debounce(300ms, main) <span class="arrow">→</span> filter(trimmed ≠ lastDispatchedQuery)<br>
+&nbsp;&nbsp;<span class="arrow">→</span> sink <span class="arrow">→</span> dispatch(query) <span class="note">(records key, cancels old task, starts new — the ONLY entry point)</span><br>
+&nbsp;&nbsp;<span class="arrow">→</span> state = .loading <span class="note">(first load)</span> or .loaded(stale, isRefreshing: true) <span class="note">(refinement)</span><br>
+&nbsp;&nbsp;<span class="arrow">→</span> await client.searchRepositories() <span class="note">(@concurrent — leaves the main actor here)</span><br>
+&nbsp;&nbsp;<span class="arrow">→</span> URLRequest (Accept, User-Agent, 15s timeout, + encoded as %2B) <span class="arrow">→</span> JSON <span class="arrow">→</span> RepoDTO <span class="arrow">→</span> Repo<br>
+&nbsp;&nbsp;<span class="arrow">→</span> state = .loaded([Repo], isRefreshing: false) <span class="arrow">→</span> @Observable invalidates SearchView<br>
+&nbsp;&nbsp;<span class="arrow">→</span> switch state <span class="arrow">→</span> List of RepoRowView <span class="note">(exhaustive — compiler-checked)</span>
+</div>
+
+<ol>
+<li><strong>The binding.</strong> <code>.searchable</code> with autocapitalization and autocorrection disabled (repository names are identifiers — iOS would "fix" <code>vapor</code> into <code>vapour</code>), and the iOS 26 <code>.searchToolbarBehavior(.minimize)</code>. Return calls <code>submitImmediately()</code>, skipping the debounce the user has already outrun.</li>
+<li><strong>Into the stream.</strong> <code>searchText</code>'s <code>didSet</code> feeds a Combine <code>PassthroughSubject</code> — the moment a value becomes an <em>event in a stream</em>.</li>
+<li><strong>The pipeline.</strong> <code>debounce</code> waits out the typing; then a <code>filter</code> compares the <em>trimmed</em> candidate against <code>lastDispatchedQuery</code>. Why a filter and not <code>removeDuplicates()</code> is Section 8's lesson.</li>
+<li><strong>One funnel.</strong> The sink calls <code>dispatch(_:)</code> — the only way any code starts a search. It records the dedup key, cancels the previous task, starts and stores the new one. Return, Retry, and pull-to-refresh all go through the same door, which is what makes "the newest search wins" a guarantee instead of a habit.</li>
+<li><strong>State respects the screen.</strong> A first load shows a spinner; a refinement keeps the stale results visible with a small indicator (<code>isRefreshing</code>); a refinement that <em>fails</em> keeps them too, with an error bar (Section 7).</li>
+<li><strong>The network, off the main actor — explicitly.</strong> The production client is <code>@concurrent</code>; under SE-0461 that attribute, not the <code>async</code> keyword, is what moves the request and decode off the caller's executor (Section 12).</li>
+<li><strong>JSON becomes domain</strong> via <code>Repo.init(dto:)</code> — the single seam where GitHub's vocabulary ends.</li>
+<li><strong>The UI is a function of state.</strong> <code>SearchView.content</code> switches over <code>LoadState</code> with no <code>default</code>.</li>
+</ol>
+
+<!-- ================= 5 ================= -->
+<h2><span class="section-num">5</span>The Model Layer: Three Shapes for One Repository</h2>
+
+<table>
+<tr><th>Type</th><th>Shape belongs to</th><th>Changes when…</th></tr>
+<tr><td><code>RepoDTO</code></td><td>GitHub's API</td><td>GitHub changes their JSON</td></tr>
+<tr><td><code>Repo</code></td><td>This app's domain</td><td>The app's needs change</td></tr>
+<tr><td><code>FavoriteRepo</code></td><td>The on-disk schema</td><td>A migration is written</td></tr>
+</table>
+
+<p>Three types that rhyme, on three different clocks, connected by exactly one conversion each (<code>Repo.init(dto:)</code>, <code>FavoriteRepo.init(repo:)</code>, <code>FavoriteRepo.asRepo</code>). <code>Repo</code> is a <code>nonisolated struct</code>: <code>Identifiable</code> for <code>List</code>, <code>Hashable</code> for value navigation, <code>Sendable</code> so it can legally cross the executor boundary the <code>@concurrent</code> client creates. The DTOs use explicit <code>CodingKeys</code> over a global snake_case strategy — boilerplate traded for greppability.</p>
+
+<p>Validation lives at the seam: <code>Repo.webURL</code> returns the repository URL only when its scheme is http(s) — compared case-insensitively, since URL schemes are case-insensitive per RFC 3986. The risk being guarded is a server-controlled custom scheme deep-linking into another installed app; the detail screen renders its GitHub link only through this property.</p>
+
+<!-- ================= 6 ================= -->
+<h2><span class="section-num">6</span>The Service Layer: a Protocol, Typed Errors, and Honest HTTP</h2>
+
+<pre><code><span class="kw">nonisolated protocol</span> <span class="ty">GitHubClient</span>: Sendable {
+    <span class="kw">func</span> <span class="fn">searchRepositories</span>(matching query: String) <span class="kw">async throws</span> -&gt; [Repo]
+}</code></pre>
+
+<p>One method, async, returning domain models. Seven conformances exist across the project: the production client, the DEBUG mock actor, and five actor-based test doubles (Section 14) — and nothing downstream can tell them apart. That substitutability <em>is</em> the testing strategy.</p>
+
+<h3>The live client</h3>
+<p><code>LiveGitHubClient</code> builds a real <code>URLRequest</code>: 15-second timeout, <code>Accept: application/vnd.github+json</code>, and a <code>User-Agent</code> (which GitHub requires). Two details the audits sharpened:</p>
+<ul>
+<li><strong><code>+</code> is percent-encoded by hand.</strong> <code>URLComponents</code> legally leaves <code>+</code> raw in a query value, but GitHub form-decodes it as a space — so <code>c++</code> silently searched for <code>c</code>. The client rewrites <code>+</code> to <code>%2B</code> after building the components, and a test pins it.</li>
+<li><strong>Status codes are read the way GitHub actually sends them</strong> (excerpt; comments abridged from the source):
+<pre><code><span class="kw">case</span> 200..&lt;300: <span class="kw">break</span>                       <span class="cm">// any 2xx is success</span>
+<span class="kw">case</span> 400, 422: <span class="kw">throw</span> .invalidQuery          <span class="cm">// GitHub's answer to a malformed/empty query</span>
+<span class="kw">case</span> 403:                                   <span class="cm">// overloaded: rate limit AND plain forbidden —</span>
+    <span class="cm">// claim "give it a minute" only when x-ratelimit-remaining / Retry-After say so</span>
+<span class="kw">case</span> 429: <span class="kw">throw</span> .rateLimited
+<span class="kw">default</span>: <span class="kw">throw</span> .server(statusCode:)</code></pre></li>
+</ul>
+<p>Cancellation is normalized — URLSession reports a cancelled task as <code>URLError(.cancelled)</code>, which the client surfaces as <code>CancellationError</code> so callers handle one shape. What the caller does with it matters more, and is Section 8's story: the view model's catch asks the cancellation <em>flag</em>, never the error <em>type</em>, because a <code>CancellationError</code> can arrive on a task that was never cancelled (session teardown), and trusting the type once produced an unrecoverable forever-spinner.</p>
+
+<h3>The mock client</h3>
+<p><code>MockGitHubClient</code> is a DEBUG-only <em>actor</em> in the app target (previews and UI tests run the real binary). Scenarios, chosen by environment variable: <code>success</code>, <code>searchError</code>, <code>emptyResults</code>, and <code>searchErrorOnce</code> — which fails the first completed call <em>per distinct query</em>, making the Retry-recovers UI test immune to typing speed (a slow keystroke burning the failure on <code>"s"</code> no longer steals it from <code>"swift"</code>). Its 300ms delay sits before the scenario switch, so a cancelled mock call throws like the real client would.</p>
+
+<!-- ================= 7 ================= -->
+<h2><span class="section-num">7</span>LoadState: Stale-While-Revalidate and Failure That Keeps Your Work</h2>
+
+<pre><code><span class="kw">nonisolated enum</span> <span class="ty">LoadState</span>&lt;Value: Sendable &amp; Equatable&gt;: Equatable, Sendable {
+    <span class="kw">case</span> idle
+    <span class="kw">case</span> loading
+    <span class="kw">case</span> loaded(Value, isRefreshing: Bool)
+    <span class="kw">case</span> failed(message: String, stale: Value?)
+}</code></pre>
+
+<p>The core argument is the classic one: a bag of <code>isLoading</code>/<code>items</code>/<code>error</code> properties has eight combinations, most nonsense; a closed enum has exactly one state and the compiler guarantees every case a screen. What two audit rounds added is that the <em>naive</em> four-case version of this enum fails its own sales pitch twice:</p>
+<ul>
+<li><strong><code>isRefreshing</code></strong> — without it, refining a query must either blank the results to a spinner (the screen flickers on every debounced keystroke — the v1 behavior) or lie about the request being done. "Results on screen while a refinement is in flight" is a legal, necessary state. The Bool lives <em>inside</em> <code>loaded</code> so "refreshing with nothing to refresh" stays unrepresentable.</li>
+<li><strong><code>stale</code> on <code>failed</code></strong> — a refinement failure is not a reason to throw away the last thing that worked. With results showing, failure renders as a compact error bar <em>over the still-readable results</em>; a first-load failure carries <code>nil</code> and selects the full-screen error. Optional rather than a fifth case, so the view still has one failure branch.</li>
+</ul>
+<p>Two companion details: the empty-results title comes from <code>lastCompletedQuery</code> — the query that <em>produced</em> the empty set — never from the live field text, which is still ahead of the debounce and may describe a search nobody has run; and the empty branch renders <code>isRefreshing</code> as a small overlay spinner instead of discarding it with a wildcard, so refining from an empty set visibly does something.</p>
+
+<!-- ================= 8 ================= -->
+<h2><span class="section-num">8</span>SearchViewModel: One Funnel, One Dedup Key, One Scoped Ticker</h2>
+
+<h3>dispatch(_:) — the only door</h3>
+<pre><code><span class="ty">@discardableResult</span>
+<span class="kw">func</span> <span class="fn">dispatch</span>(_ query: String) -&gt; Task&lt;Void, Never&gt; {
+    lastDispatchedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+    searchTask?.cancel()
+    <span class="kw">let</span> task = Task { <span class="kw">await self</span>.search(matching: query) }
+    searchTask = task
+    <span class="kw">return</span> task
+}</code></pre>
+<p><code>search(matching:)</code> is <strong>private</strong>; the debounce sink, <code>submitImmediately()</code>, <code>retry()</code>, and pull-to-refresh all go through <code>dispatch(_:)</code>. This came out of an audit finding, and the reasoning is worth keeping: the design's safety rests on two invariants — <em>every in-flight search is <code>searchTask</code></em> (so cancelling it is a complete statement), and <em>the dedup key always describes the search actually running</em>. When <code>search</code> was internal and did its own bookkeeping-free work, those held only by convention; the first future caller (pull-to-refresh was the obvious one) would have broken them into a genuine stale-clobbers-fresh bug. Funnelling makes the invariants structural, and returning the task lets tests and <code>.refreshable</code> await completion without touching internals.</p>
+
+<h3>Why <code>filter</code>, not <code>removeDuplicates()</code></h3>
+<p><code>removeDuplicates()</code> dedups on the <em>input</em>, which is only sound when the operation is deterministic — and a network search is not. With it, a failed search became unrepeatable by typing: the operator remembered the failed query forever. The replacement dedups against <code>lastDispatchedQuery</code>, which the <em>outcome</em> controls: recorded on dispatch (so a Return-then-debounce pair can't double-fire), cleared on failure (so retyping retries), kept on success (so identical re-submissions stay suppressed), and trimmed on both sides (so <code>"swift "</code> isn't a "different" query worth a second request).</p>
+
+<h3>One catch, asking the flag</h3>
+<p>The failure path has a single <code>catch</code>, and it checks <code>Task.isCancelled</code> — never <code>error is CancellationError</code>. The distinction is load-bearing: a <code>CancellationError</code> can arrive on an <em>uncancelled</em> task (the client normalizes every <code>URLError(.cancelled)</code>, which URLSession also produces for session teardown). An earlier version trusted the type and could exit leaving <code>.loading</code> on screen forever — with the dedup key still pinned, so retyping was filtered, and no Retry button, because Retry renders on <code>.failed</code>. Asking the flag covers both worlds: a genuinely superseded search returns silently; anything else becomes a <code>.failed</code> the user can act on. The post-await <code>guard !Task.isCancelled</code> before the success writes is airtight for a stated reason — cancellation can only originate on the main actor, and there is no suspension point between the check and the writes — and the comment says exactly that, because the pattern is <em>not</em> airtight in a class where cancellation can arrive from a background context.</p>
+
+<h3>The ticker</h3>
+<p>Combine's second appearance: <code>Timer.publish</code>, started/stopped by the results list's appear/disappear (an init-started timer on an app-lifetime object would fire forever on every tab), seeded on start (<code>Timer.publish</code>'s first emission is a second away; without the seed, returning to the tab showed a stale timestamp for a beat), and read only by a leaf view (Section 9). The <code>max(0,…)</code> clamp's comment is now honest: it <em>does</em> fire — the first body evaluation runs before <code>.onAppear</code> seeds the clock — and in steady state <code>Int</code> truncation is what absorbs sub-second lag, not the seed.</p>
+
+<div class="callout"><span class="label">Type-checks vs. is-safe.</span> The Combine sink closures are marked <code>@MainActor</code>, and the comments name <code>scheduler: DispatchQueue.main</code> / <code>on: .main</code> as load-bearing. Precision matters here: default MainActor isolation is why the closures <em>type-check</em> touching state; the scheduler arguments are why that's <em>true</em>; and the <code>@MainActor</code> annotations insert a <em>dynamic</em> check — nothing is verified at compile time, and that is the point. Swap the scheduler for a background queue and the code compiles clean, then traps loudly at runtime instead of quietly corrupting main-actor state. An audit verified the trap empirically.</div>
+
+<!-- ================= 9 ================= -->
+<h2><span class="section-num">9</span>The Views: Where Logic Was Deliberately Left Out</h2>
+
+<h3>SearchView</h3>
+<p>A pure function of <code>viewModel.state</code>:</p>
+<table>
+<tr><th>State</th><th>UI</th></tr>
+<tr><td><code>.idle</code></td><td><code>ContentUnavailableView</code> invitation</td></tr>
+<tr><td><code>.loading</code></td><td>Full-screen spinner — <em>first</em> loads only</td></tr>
+<tr><td><code>.loaded</code>, empty</td><td>System no-results view titled with <code>lastCompletedQuery</code>; overlay spinner while refreshing</td></tr>
+<tr><td><code>.loaded(repos, isRefreshing)</code></td><td>The <code>List</code> + footer bar; <code>.refreshable</code> pull-to-refresh (safe because it goes through <code>dispatch</code>)</td></tr>
+<tr><td><code>.failed</code>, stale kept</td><td>The stale <code>List</code> with a compact <code>ErrorBanner</code> (message + Retry) in a bottom bar</td></tr>
+<tr><td><code>.failed</code>, nothing to keep</td><td>Full-screen error with a prominent Retry</td></tr>
+</table>
+<p>The footer and error bar use <strong><code>safeAreaBar</code></strong> — the iOS 26 API that supplies the system bar background and scroll-edge treatment — rather than <code>safeAreaInset</code> with a hand-painted <code>.background(.bar)</code>, which on iOS 26 rendered a flat slab above the floating tab bar. Both error presentations carry the same two accessibility identifiers (<code>search.errorView</code> on the message, <code>search.retryButton</code> on the button); only one renders at a time.</p>
+
+<div class="callout warn"><span class="label">A real-world scar, kept on purpose.</span> The error identifier lives on the description <em>text</em>, never the container: <code>ContentUnavailableView</code> re-parents a container-level identifier onto its merged children, which clobbered the Retry button's identifier at runtime. The interim workaround — matching the literal English "Something went wrong" — then broke the moment the app grew German. Identifier on the one true leaf: correct and locale-independent.</div>
+
+<h3>LastRefreshedFooter — invalidation confined to a leaf</h3>
+<p><code>@Observable</code> attributes property reads to whichever <code>body</code> performs them. The footer text reads <code>now</code>, which the ticker rewrites every second — inlined into <code>SearchView</code> (even inside the bar's builder closure) that read would belong to <code>SearchView.body</code>, re-evaluating the whole screen once a second. As its own small struct, the per-second dependency belongs to a view whose body is a spinner and a <code>Text</code>. The comment is precise about two things the first edition fudged: re-<em>evaluation</em> is not re-<em>rendering</em> (structural diffing elides unchanged rows — the cost is real but smaller than "the whole screen re-renders"), and the insulation is one-directional (the leaf still re-runs when the parent invalidates; that direction is harmless). The spinner is no longer gated on the timestamp's existence — progress and "a previous request finished" are unrelated facts — and the whole bar is <code>.accessibilityHidden(true)</code>: a label that changes every second is hostile to VoiceOver, and this is ambient status, not content.</p>
+
+<h3>RepoRowView</h3>
+<ul>
+<li>Star counts render via <code>.formatted()</code> (locale grouping) — the v1 raw interpolation both skipped grouping and minted a meaningless bare <code>%lld</code> key into the catalog.</li>
+<li><code>ViewThatFits</code> reflows the stats row vertically at accessibility text sizes; the summary's line limit lifts when <code>dynamicTypeSize.isAccessibilitySize</code>.</li>
+<li>De-emphasized text uses a semantic <strong>asset-catalog color</strong> with Any/Dark <em>and</em> Increase Contrast variants — replacing a fixed <code>opacity(0.65)</code> that passed the contrast audit but opted out of Increase Contrast and was only valid against the backgrounds it was measured on. (Stock <code>.secondary</code> at caption sizes measures ~3.9:1, below WCAG AA's 4.5:1 — the automated audit caught it.)</li>
+<li>One VoiceOver element per row (<code>children: .ignore</code> — the label fully replaces the fragments), speaking whole localized sentences with correctly <em>inflected</em> star counts via catalog plural substitutions (Section 16).</li>
+</ul>
+
+<h3>RepoDetailView</h3>
+<p>No view model — no async orchestration to justify one. Live favorite state via a parameterized <code>@Query</code> built in <code>init</code>; writes through <code>FavoritesStore</code>. The toolbar button carries a <em>stable</em> label ("Favorite") with state in the <code>.isSelected</code> trait — the earlier flipping label plus trait read as the contradiction "Remove from Favorites, selected". The star swap animates via <code>.animation(value: isFavorite)</code> bound to the <em>observed</em> value (a <code>withAnimation</code> around the write animated nothing: the value changes later, when SwiftData's notification lands), and the haptic is driven by a toggle counter incremented in the action — not by the observed value, which fired a success buzz for merely <em>navigating to</em> a favorited repo, and for unfavoriting. The GitHub link renders only through <code>Repo.webURL</code>.</p>
+
+<h3>FavoritesView</h3>
+<p>Live <code>@Query</code> reads; the empty state is a non-hit-testable <code>.overlay</code> so the List keeps its identity and the last row's delete animates; <code>EditButton</code> appears only when there is something to edit; multi-row deletes go through the store's batch API — one <code>context.save()</code>, one change notification, one list rebuild.</p>
+
+<h3>RootView and previews</h3>
+<p>The search tab declares <code>role: .search</code>, with a comment that now says precisely what that buys and what it doesn't — the iOS 26 minimize-into-search behavior is the separate, explicit <code>.searchToolbarBehavior(.minimize)</code> opt-in, and the tab bar minimizes on scroll via <code>.tabBarMinimizeBehavior(.onScrollDown)</code>. Both tabs carry accessibility identifiers via <code>TabContent.accessibilityIdentifier</code> — an API two earlier comments confidently claimed didn't exist (it has since iOS 18; the audit that caught this is why the tab query in UI tests is now locale-independent). Previews are seeded directly into every interesting state through a DEBUG-only seam (a preview renders once — it cannot wait out an async search, which is why the old "Error" preview silently showed the idle prompt forever), and the SwiftData container arrives via a <code>PreviewModifier</code> trait (<code>traits: .sampleData</code>), the iOS 18+ replacement for a global container constant.</p>
+
+<!-- ================= 10 ================= -->
+<h2><span class="section-num">10</span>Persistence: SwiftData, @Query, and the Store Split</h2>
+
+<p>Reads via <code>@Query</code> in views — live, animated, no refresh bugs. Writes via <code>FavoritesStore</code> — dedup, save timing, and batching in one tested place. Sharpened details:</p>
+<ul>
+<li><strong><code>.unique</code> is a safety net, not the mechanism.</strong> The dedup the app relies on is the fetch-then-branch in <code>existingFavorite(for:)</code>. Remove the attribute and every test of the app's <em>behavior</em> still passes — one test exists precisely to pin the constraint itself (a direct duplicate insert collapses to one row).</li>
+<li><strong><code>isFavorite</code> throws</strong> — its earlier <code>try?</code> conflated "the fetch failed" with "not favorited".</li>
+<li><strong><code>remove(_ favorites:)</code></strong> deletes N rows under a single save.</li>
+</ul>
+<p>Unit tests run against a fresh in-memory <code>ModelContainer</code> per test; UI tests get the same hermeticity via a launch argument.</p>
+
+<!-- ================= 11 ================= -->
+<h2><span class="section-num">11</span>The Composition Root: Dependency Injection Without Magic</h2>
+
+<p><code>AppDependencies</code> decides every concrete implementation once, at launch. Both test hooks (<code>-UITestMockNetwork</code>, <code>-UITestInMemoryStore</code>) are <code>#if DEBUG</code>-gated — an audit caught the in-memory flag, a data-loss switch, being honored in Release. And the container build has no <code>fatalError</code>: the most common real-world container failure is a schema-migration mismatch after an app update, where crash-on-launch is an inescapable crash loop — the root logs the failure and falls back to an in-memory store, degraded but alive. Constructor injection for the view model; <code>.modelContainer</code> for SwiftData; the release binary contains none of the test machinery.</p>
+
+<!-- ================= 12 ================= -->
+<h2><span class="section-num">12</span>The Concurrency Model: Swift 6, SE-0461, and What "async" Actually Means Now</h2>
+
+<p>The project compiles in Swift 6 language mode with <code>SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor</code> and <code>SWIFT_APPROACHABLE_CONCURRENCY = YES</code> — Xcode 26's defaults. The second setting enables <strong>SE-0461</strong>:</p>
+
+<div class="callout"><span class="label">The rule that changed.</span> A plain <code>nonisolated</code> <strong>async</strong> function no longer hops to a background executor — it runs on its <em>caller's</em> executor. If a MainActor view model awaits your <code>nonisolated</code> async networking function, its body — including your JSON decoding — executes <strong>on the main actor</strong>. It compiles, passes tests, and drops frames. The first edition of this codebase had exactly that bug, wearing the pre-2025 folklore ("decoded on a background URLSession task") as a doc comment. The fix is one attribute: <code>@concurrent</code>, which opts the function back out to the global concurrent executor. Both facts — the silent main-actor execution without the attribute, and the genuine hop with it — were verified with compiler probes during the audits, including through an <code>any GitHubClient</code> existential.</div>
+
+<p>Where the annotations live: UI-facing code needs none (MainActor by default — which is also why <code>FavoritesStore</code>'s fetch-then-branch has no race: two rapid taps are two serialized main-actor turns). <code>nonisolated</code> marks the crossing types — models, DTOs, the client protocol — and, less obviously, the shared <code>Logger</code> constants: a <code>static let</code> in an extension picks up the module's default isolation, and an accidentally-MainActor logger is unusable from exactly the <code>@concurrent</code> context where network failures live. Actors hold genuinely shared mutable state: the mock client and the test doubles.</p>
+
+<p>For readers returning from the pre-SwiftUI era, the translation in brief — each row is one of this codebase's demonstrations:</p>
+<table>
+<tr><th>Pre-SwiftUI technique (c. 2019)</th><th>RepoScout does it with…</th></tr>
+<tr><td>UIViewController + delegates</td><td>SwiftUI View structs; state drives UI</td></tr>
+<tr><td>KVO / NotificationCenter</td><td><code>@Observable</code> per-body read tracking (§9's leaf-view lesson)</td></tr>
+<tr><td>GCD, <code>DispatchQueue.main.async</code></td><td>async/await + actors + MainActor default, with <code>@concurrent</code> as the explicit "off-main" verb</td></tr>
+<tr><td>Core Data + NSFetchedResultsController</td><td>SwiftData <code>ModelContainer</code> + <code>@Query</code></td></tr>
+<tr><td>NSTimer you must invalidate</td><td><code>Timer.publish</code> with an owned <code>AnyCancellable</code>, started/stopped with the UI</td></tr>
+<tr><td>OCMock-style mocking</td><td>Protocol conformances + actor doubles; no framework</td></tr>
+</table>
+
+<!-- ================= 13 ================= -->
+<h2><span class="section-num">13</span>Combine's Role in 2026 — the Honest Boundary</h2>
+
+<p>Combine appears exactly twice — the debounced search pipeline and the scoped ticker — both genuine <em>streams of events over time</em>. Every one-shot request/response is async/await; <code>LiveGitHubClient</code> contains no Combine and says so. The boundary rule: <em>if a value arrives once, <code>await</code> it; if values keep arriving, model them as a stream.</em></p>
+
+<p>Two honest footnotes. First, operators encode assumptions: <code>removeDuplicates()</code> looked like exactly the right operator for the pipeline and was quietly wrong for a non-deterministic operation — the lesson is to check the assumption, not just reach for the obvious operator. Second, <code>AsyncSequence</code>/<code>AsyncStream</code> (plus <code>swift-async-algorithms</code>' debounce) are the concurrency-native alternative a 2026 team would also evaluate; this app teaches Combine deliberately — it ships in the OS, the operators needed are built in, and it remains what this app's readers will inherit in existing codebases. A curriculum choice, stated as one.</p>
+
+<!-- ================= 14 ================= -->
+<h2><span class="section-num">14</span>Unit Testing with Swift Testing</h2>
+
+<p>Swift Testing throughout — <code>@Suite</code>, <code>@Test</code>, <code>#expect</code>/<code>#require</code>, parameterized cases — with <code>@MainActor</code> annotations where suites touch main-actor types. The supporting cast in <code>TestSupport.swift</code> is the real teaching content, and its roster is worth stating precisely:</p>
+<ul>
+<li><code>SpyGitHubClient</code> — records queries, returns a canned result.</li>
+<li><code>ScriptedGitHubClient</code> — a per-call result script; the mechanism behind the Retry-recovers test.</li>
+<li><code>GatedGitHubClient</code> / <code>KeyedGatedGitHubClient</code> — suspend requests on continuations until the test says <code>open()</code>, globally or per-query; both are cancellation-safe via <code>withTaskCancellationHandler</code> (including the pre-opened path).</li>
+<li><code>UncancellableGatedGitHubClient</code> — <strong>deliberately ignores cancellation.</strong> It exists because a cancellation-safe gate can never produce the scenario the post-await guard exists for: a <em>successful</em> response arriving on an already-cancelled task. The only double that can prove the stale result never lands is one that refuses to be cancelled. Its opposite number and it are, together, the codebase's best test-design lesson.</li>
+</ul>
+<p>Infrastructure honed by the audits: <code>poll(until:)</code> re-checks its condition once after the final sleep and <em>throws</em> on timeout (the earlier version recorded an Issue and carried on — a timed-out wait could fall through into further awaits and hang the test instead of failing it); <code>StubURLProtocol</code>'s handler sits behind a real <code>Mutex</code>, and <code>withStubbedClient</code> additionally serializes whole invocations process-wide — the <code>Mutex</code> removes the data race with URLSession's loader thread, the gate is what prevents two concurrent suites from answering each other's requests.</p>
+
+<p>Coverage worth naming: the full HTTP mapping table (403 with and without rate-limit headers, 422, 2xx incl. 203, garbage-200, <code>URLError(.cancelled)</code>, a clean round-trip); <code>+</code> encoding; the supersession invariant driven through the <em>real</em> <code>dispatch</code> path; failure-then-retype re-fires while success-then-retype doesn't; an uncancelled <code>CancellationError</code> lands in <code>.failed</code> (the forever-spinner regression test); stale results surviving a failed refinement; the empty-refinement state; ticker seeding, double-start, and stop-when-never-started; duplicate inserts; batch remove; and the localized plural labels, executed in both languages by the test plan.</p>
+
+<!-- ================= 15 ================= -->
+<h2><span class="section-num">15</span>UI Testing: BDD Scenarios, Two Languages, Audited Accessibility</h2>
+
+<p>The shape is unchanged: <code>Given/When/Then</code> wrapping <code>XCTContext.runActivity</code> so reports read as scenarios; screen objects encapsulating queries; hermetic DEBUG-only launches. What the rounds added:</p>
+<ul>
+<li><strong>Scenarios that act, not just look</strong> — Retry is <em>tapped</em> and recovery asserted (via the per-query fail-once mock); empty results has a scenario; deletion is exercised through the visible <code>EditButton</code> path.</li>
+<li><strong>Keyboard-focus waits</strong> before <code>typeText</code> — the classic CI flake, addressed.</li>
+<li><strong>Automated accessibility audits</strong> — <code>performAccessibilityAudit()</code> across the screens, re-run at the largest accessibility size with suppressions removed; it caught a real WCAG contrast failure (§9).</li>
+<li><strong>Two languages, honestly.</strong> The test plan runs the suite in English and German. Queries the app controls are identifier-based and locale-independent — including the tab bar, once the false "no API for that" claim was corrected. Four test cases match strings <em>Apple</em> owns (the system no-results view, <code>EditButton</code>'s title, the delete confirmation, the search field's clear button) and skip themselves outside English via an explicit <code>XCTSkip</code> gate — measured, visible in the test report as skips, rather than silently green. German runs: 75 test executions, 4 skips, 0 failures.</li>
+<li>The launch test records an <code>XCTApplicationLaunchMetric</code> — a baseline-able number in the result bundle (a metric without a stored baseline records rather than asserts; the honest description) — plus the appearance-matrix screenshots.</li>
+</ul>
+
+<!-- ================= 16 ================= -->
+<h2><span class="section-num">16</span>Localization and Accessibility</h2>
+
+<h3>A catalog that localizes</h3>
+<p>The String Catalog carries English and a <strong>complete German localization</strong> — reviewed at native quality during the audits (the review found one grammar error and a dozen register improvements, all applied: consistent <em>du</em>-form, Apple-German terminology like <em>Inhaber</em> and <em>Internetverbindung</em>, Duden plurals). Every key has a translator comment; the app's name is marked <code>shouldTranslate: false</code> rather than "translated" to itself.</p>
+<p>Plurals are done properly, at two levels. The footer string is spelled out ("Updated 42 <em>seconds</em> ago") with <code>one</code>/<code>other</code> variations in both languages — an inflecting language needs a noun to inflect. And the VoiceOver row sentences use catalog <strong>substitutions</strong> (<code>%#@starCount@</code>): the raw integer drives plural selection so German hears "1 Stern" / "67000 Sterne" — the technique an earlier doc claimed impossible, now demonstrated. The stated trade: the substitution's <code>%lld</code> drops digit grouping in the <em>spoken</em> count; the visible label still uses <code>.formatted()</code>.</p>
+
+<h3>Accessibility as architecture</h3>
+<ul>
+<li>Rows are single VoiceOver elements speaking whole localized sentences — fragment-joining bakes in English word order and hands translators pieces they can't reorder.</li>
+<li>Dynamic Type genuinely accommodated: <code>ViewThatFits</code> reflow, accessibility-size line-limit lifts.</li>
+<li>Contrast measured, then fixed <em>semantically</em> — an asset color with Increase Contrast variants, not a hardcoded alpha.</li>
+<li>State conveyed as state: stable "Favorite" label + <code>.isSelected</code>, haptics driven by the user's action.</li>
+<li>Ambient noise silenced: the once-per-second footer is invisible to VoiceOver.</li>
+<li>And a correction the docs now carry: <code>accessibilityIdentifier</code> is a test-automation hook, invisible to assistive technology — identifiers are the UI tests' contract, not an accessibility feature.</li>
+</ul>
+
+<!-- ================= 17 ================= -->
+<h2><span class="section-num">17</span>Shipping Hygiene: the Parts That Aren't Code</h2>
+
+<table>
+<tr><th>Artifact</th><th>Why it's there</th></tr>
+<tr><td>Shared scheme + <code>testExample.xctestplan</code></td><td>Auto-created schemes are per-user: without a shared one, every documented command fails on a fresh clone. The test plan adds the English/German configurations and scopes code coverage to the app target (~90% full-suite).</td></tr>
+<tr><td><code>LICENSE</code> (MIT)</td><td>No license means all-rights-reserved — readers would be legally barred from copying the patterns the app teaches.</td></tr>
+<tr><td><code>PrivacyInfo.xcprivacy</code></td><td>Required when an app uses required-reason APIs or listed SDKs; this app uses neither, and declaring the all-empty manifest — "we collect nothing," stated rather than implied — is the instructive case.</td></tr>
+<tr><td>Real app icon + accent color</td><td>1024px light/dark/tinted; dark and tinted ship as artwork on transparency so the system composites its own backgrounds, per Apple's guidance (an earlier export baked opaque plates in).</td></tr>
+<tr><td><code>ITSAppUsesNonExemptEncryption = NO</code></td><td>Removes a manual export-compliance question from every upload.</td></tr>
+<tr><td>App category (Developer Tools)</td><td>Optional in the Info.plist for iOS (the store listing sets it), declared here so archives carry it.</td></tr>
+<tr><td>ATS fully strict</td><td>No exception dictionary — <code>api.github.com</code> passes default ATS (verified with <code>nscurl</code>). Sample apps that blanket-disable ATS teach the wrong reflex.</td></tr>
+<tr><td>iPhone-only, no committed team ID</td><td>Device family matches what was designed; a personal team ID neither leaks nor breaks other people's signing.</td></tr>
+<tr><td><code>.github/workflows/ci.yml</code></td><td>A unit + UI pipeline, written for when the repo gains a remote — it has not yet executed, and its header says so.</td></tr>
+<tr><td><code>.swift-format</code></td><td>The house style as a checkable record (rule violations: zero). The pretty-printer's wrapping opinions are documented as advisory, not a gate.</td></tr>
+<tr><td><code>docs/process-archive/</code>, <code>docs/guide/</code></td><td>Point-in-time build/remediation reports, disclaimed; and this guide's editable source.</td></tr>
+</table>
+
+<!-- ================= 18 ================= -->
+<h2><span class="section-num">18</span>Design Decisions, Trade-offs, and Known Edges</h2>
+
+<h3>Decisions worth restating</h3>
+<ul>
+<li><strong>A view model only where it earns its keep</strong> — one screen has orchestration; one screen has a view model.</li>
+<li><strong>State as a closed enum including the states everyone forgets</strong> — stale-while-revalidate <em>and</em> failure-that-keeps-your-work.</li>
+<li><strong>One funnel for every search</strong> — invariants made structural, not habitual.</li>
+<li><strong>Ask the flag, not the type</strong> — cancellation handling that survives errors lying about their origin.</li>
+<li><strong>The protocol seam is the testing strategy</strong> — seven conformances, no mocking framework.</li>
+<li><strong>Comments must be true under the actual build settings</strong> — both audits' deepest findings were confident prose on correct code; in a teaching codebase a wrong comment is the defect readers copy.</li>
+</ul>
+
+<h3>Known edges (deliberate, documented)</h3>
+<ul>
+<li>No pagination, auth, image loading, or iPad layout — scope, by design, with the device family matching it.</li>
+<li>Four UI test cases skip outside English (Apple-owned strings with no identifier hooks); the skip is explicit and visible in reports.</li>
+<li>The edit-mode delete control is queried by its system image name — <code>List</code> publishes it beside the row, outside any app-controlled element; measured, and documented in the screen object.</li>
+<li>The spoken star count loses digit grouping to the plural substitution; the visible count keeps it.</li>
+<li>CI has never executed (no remote yet); <code>swift format</code>'s pretty-printer wrapping is advisory; the searchable field's own identifier limits are noted in the screen object and unverified against newer SDKs.</li>
+<li>Negative assertions (debounce non-firing) are bounded windows — they fail open under extreme load, and say so.</li>
+</ul>
+
+<h3>Where to go next</h3>
+<p>Read <code>ARCHITECTURE.md</code> for the tour in prose, then the code in this order: <code>Support/LoadState.swift</code> → <code>ViewModels/SearchViewModel.swift</code> → <code>Services/LiveGitHubClient.swift</code> (the <code>@concurrent</code> comment especially) → <code>Views/Search/SearchView.swift</code> through its two private leaf views → <code>testExampleTests/TestSupport.swift</code> for the double roster. The doc comments are the second half of this guide — written, audited twice, and corrected to be read.</p>
+
+</body>
+</html>
