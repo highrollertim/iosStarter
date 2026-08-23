@@ -14,9 +14,11 @@ struct FavoritesScreen {
     /// UIKit's own `EditButton`, so its label is a *system* string —
     /// "Bearbeiten" under `-testLanguage de`. Locale-bound with no app-side
     /// fix, for the same reason as `SearchScreen.noResultsView`. Together
-    /// with the "Delete" confirmation below and that view's system title,
-    /// these are the queries that keep the German verification run to
-    /// `LaunchTests` only.
+    /// with the "Delete" confirmation below, that view's system title, and
+    /// `UISearchTextField`'s "Clear text" button, these are the last strings
+    /// keeping any part of this suite in the development language — see
+    /// `skipUnlessRunningInEnglish(matching:)`, which the one test that
+    /// reaches this property calls first.
     var editButton: XCUIElement {
         app.navigationBars.buttons["Edit"]
     }

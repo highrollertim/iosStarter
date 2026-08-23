@@ -1,0 +1,49 @@
+{
+  "configurations" : [
+    {
+      "id" : "1C7A0E4E-2F5B-4C0B-9E2A-0B4D8E6A1001",
+      "name" : "English",
+      "options" : {
+
+      }
+    },
+    {
+      "id" : "1C7A0E4E-2F5B-4C0B-9E2A-0B4D8E6A1002",
+      "name" : "German",
+      "options" : {
+        "language" : "de",
+        "region" : "DE"
+      }
+    }
+  ],
+  "defaultOptions" : {
+    "codeCoverage" : {
+      "targets" : [
+        {
+          "containerPath" : "container:testExample.xcodeproj",
+          "identifier" : "A34690DD303A47FF005CD129",
+          "name" : "testExample"
+        }
+      ]
+    }
+  },
+  "testTargets" : [
+    {
+      "parallelizable" : true,
+      "target" : {
+        "containerPath" : "container:testExample.xcodeproj",
+        "identifier" : "A34690EA303A4800005CD129",
+        "name" : "testExampleTests"
+      }
+    },
+    {
+      "parallelizable" : false,
+      "target" : {
+        "containerPath" : "container:testExample.xcodeproj",
+        "identifier" : "A34690F4303A4800005CD129",
+        "name" : "testExampleUITests"
+      }
+    }
+  ],
+  "version" : 1
+}

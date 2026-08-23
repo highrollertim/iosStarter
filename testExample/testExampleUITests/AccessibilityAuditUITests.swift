@@ -26,6 +26,8 @@ final class AccessibilityAuditUITests: XCTestCase {
 
     @MainActor
     func testSearchResultsAndFavoritesPassTheAccessibilityAudit() throws {
+        try skipUnlessRunningInEnglish(matching: "UISearchTextField's \"Clear text\" button")
+
         let app = XCUIApplication.launchedForUITest()
         let search = SearchScreen(app: app)
         let detail = RepoDetailScreen(app: app)
@@ -73,6 +75,8 @@ final class AccessibilityAuditUITests: XCTestCase {
     /// still passes.
     @MainActor
     func testSearchResultsSurviveTheLargestDynamicTypeSize() throws {
+        try skipUnlessRunningInEnglish(matching: "UISearchTextField's \"Clear text\" button")
+
         let app = XCUIApplication.launchedForUITest(
             contentSizeCategory: Self.largestAccessibilitySize
         )
@@ -105,9 +109,12 @@ final class AccessibilityAuditUITests: XCTestCase {
     /// alternatives are abandoning `.searchable` for a hand-rolled field or
     /// letting a permanently unfixable issue fail the suite.
     ///
-    /// The label is matched in English, which is what this suite runs in. A
-    /// localized run would need the localized string — an awkwardness that is
-    /// itself a good argument for keeping this list at one entry.
+    /// The label is matched in English. Both tests in this class therefore
+    /// open with `skipUnlessRunningInEnglish(matching:)`: under the test
+    /// plan's German configuration the same button is "Text löschen", this
+    /// filter stops matching, and the audit fails on an issue no app-side
+    /// change can fix. Needing a translation table to keep a suppression
+    /// working is itself a good argument for keeping this list at one entry.
     @MainActor
     private static func ignoringSearchFieldClearButton(_ issue: XCUIAccessibilityAuditIssue) -> Bool {
         issue.auditType == .hitRegion && issue.element?.label == "Clear text"

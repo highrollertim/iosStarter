@@ -43,7 +43,12 @@ final class FavoritesFlowUITests: XCTestCase {
     }
 
     @MainActor
-    func testDeletingAFavoriteViaEditButton() {
+    func testDeletingAFavoriteViaEditButton() throws {
+        // `EditButton`'s label and the "Delete" confirmation are both system
+        // strings, so this scenario only runs in the development language —
+        // see `skipUnlessRunningInEnglish(matching:)`.
+        try skipUnlessRunningInEnglish(matching: "EditButton's \"Edit\" and the \"Delete\" confirmation")
+
         // Swipe-to-delete is a gesture, and a gesture is not an affordance:
         // it is invisible and unreachable for Switch Control and Voice
         // Control. `EditButton` gives the same operation a real control —

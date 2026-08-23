@@ -316,13 +316,26 @@ struct SearchViewModelTests {
     @Test("refreshed description reports whole seconds, and inflects for one")
     func refreshedDescription() {
         let base = Date(timeIntervalSinceReferenceDate: 1_000)
-        #expect(SearchViewModel.refreshedDescription(from: base, now: base.addingTimeInterval(42)) == "Updated 42 seconds ago")
+        // This suite runs twice — `testExample.xctestplan` has an English
+        // configuration and a German one — and this is the one test whose
+        // output is a *localized* string, so it is the one test that has to
+        // know which run it is in. That is not an inconvenience to work
+        // around: a plural rule is exactly the kind of thing that is correct
+        // in the development language and wrong everywhere else, and only a
+        // run in the other language can catch it.
+        let expected: (fortyTwo: String, one: String, zero: String) =
+            Locale.current.language.languageCode?.identifier == "de"
+            ? ("Vor 42 Sekunden aktualisiert", "Vor 1 Sekunde aktualisiert", "Vor 0 Sekunden aktualisiert")
+            : ("Updated 42 seconds ago", "Updated 1 second ago", "Updated 0 seconds ago")
+
+        #expect(SearchViewModel.refreshedDescription(from: base, now: base.addingTimeInterval(42)) == expected.fortyTwo)
         // The singular comes from the catalog's plural variations, not from
         // any branch in the code — which is the point of testing it. If the
-        // `one` variation is ever dropped, English silently regresses to
-        // "Updated 1 seconds ago" and only this assertion notices.
-        #expect(SearchViewModel.refreshedDescription(from: base, now: base.addingTimeInterval(1)) == "Updated 1 second ago")
-        #expect(SearchViewModel.refreshedDescription(from: base, now: base) == "Updated 0 seconds ago")
+        // `one` variation is ever dropped, the language silently regresses to
+        // "Updated 1 seconds ago" / "Vor 1 Sekunden aktualisiert" and only
+        // this assertion notices.
+        #expect(SearchViewModel.refreshedDescription(from: base, now: base.addingTimeInterval(1)) == expected.one)
+        #expect(SearchViewModel.refreshedDescription(from: base, now: base) == expected.zero)
         #expect(SearchViewModel.refreshedDescription(from: nil, now: base) == nil)
     }
 

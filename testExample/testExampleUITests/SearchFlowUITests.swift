@@ -25,7 +25,12 @@ final class SearchFlowUITests: XCTestCase {
     }
 
     @MainActor
-    func testSearchWithNoMatchesShowsTheNoResultsState() {
+    func testSearchWithNoMatchesShowsTheNoResultsState() throws {
+        // The assertion below matches `ContentUnavailableView.search(text:)`'s
+        // own title, which Apple localizes — see
+        // `skipUnlessRunningInEnglish(matching:)`.
+        try skipUnlessRunningInEnglish(matching: "ContentUnavailableView.search(text:)'s \"No Results\" title")
+
         // A *successful* search that matched nothing. No error scenario
         // reaches this screen — `.loaded([])` is its own branch in
         // `SearchView` — so without a dedicated mock scenario the empty state

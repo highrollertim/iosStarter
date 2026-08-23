@@ -39,9 +39,10 @@ struct SearchScreen {
     /// predicate finds nothing. The only ways out are to stop using the
     /// system's empty-search view (losing the reason it is here) or to
     /// hard-code a translation table of Apple's own strings, which would be
-    /// wrong the next time Apple rewords it. The suite is therefore written
-    /// to run in the development language; the German run is a localization
-    /// smoke check (see `LaunchTests`), not a full-suite target.
+    /// wrong the next time Apple rewords it. Its one caller therefore opens
+    /// with `skipUnlessRunningInEnglish(matching:)`, so the test plan's
+    /// German configuration reports it as skipped instead of failing on a
+    /// string this app does not own.
     var noResultsView: XCUIElement {
         app.staticTexts
             .matching(NSPredicate(format: "label BEGINSWITH %@", "No Results"))
