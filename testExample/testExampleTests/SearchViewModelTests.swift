@@ -108,17 +108,50 @@ struct SearchViewModelTests {
 
         // `KeyedGatedGitHubClient` honours cancellation (it wraps its
         // continuation in a `withTaskCancellationHandler`), so the cancelled
-        // first call throws `CancellationError` rather than parking forever.
-        // What this asserts is therefore `search(matching:)`'s
-        // `catch is CancellationError` branch: a superseded request must exit
-        // silently, leaving the newer result — and *not* a `.failed` state —
-        // on screen. The complementary guard, for clients that ignore
-        // cancellation entirely, is covered by
+        // first call throws rather than parking forever. What keeps that
+        // throw off the screen is the `guard !Task.isCancelled` in the catch
+        // — the property this test pins is "a superseded search cannot
+        // clobber the newer one", and the cancellation *flag* is what
+        // delivers it. Mutation testing makes the distinction concrete: the
+        // error's type is never consulted, so this assertion holds equally
+        // whether the client throws `CancellationError` or something else
+        // entirely. The complementary guard, for clients that ignore
+        // cancellation and return a late success, is covered by
         // `lateResultFromCancelledTaskIsDiscarded` below.
         await client.open("first")
         await firstSearch.value
 
         #expect(viewModel.state == .loaded(freshResult, isRefreshing: false))
+    }
+
+    @Test("a CancellationError on an uncancelled task fails visibly, not silently")
+    func rogueCancellationErrorSurfacesAsFailure() async throws {
+        // `LiveGitHubClient` maps every `URLError(.cancelled)` to
+        // `CancellationError`, and `URLSession` produces that code for
+        // teardown that has nothing to do with `Task` cancellation. Keying
+        // off the error's *type* therefore swallowed a real failure on a
+        // perfectly live task: the screen kept `.loading` forever, with no
+        // Retry (it renders only on `.failed`) and the query still recorded
+        // as dispatched, so retyping it was filtered out too.
+        let client = RogueCancellationGitHubClient(failures: 1)
+        let viewModel = SearchViewModel(client: client, debounceInterval: .milliseconds(50))
+
+        viewModel.searchText = "swift"
+        try await poll(
+            until: { if case .failed = viewModel.state { true } else { false } },
+            message: "the rogue CancellationError to surface as .failed"
+        )
+
+        // `lastDispatchedQuery` is private, so it is asserted the way the user
+        // experiences it: retyping the identical text has to reach the client
+        // a second time. If the key were still pinned, the `filter` in `init`
+        // would drop this and the state would never advance.
+        viewModel.searchText = "swift"
+        try await poll(
+            until: { viewModel.state == .loaded(.fixture, isRefreshing: false) },
+            message: "the identical query to run again after the failure"
+        )
+        #expect(await client.queries == ["swift", "swift"])
     }
 
     @Test("a client that ignores cancellation still can't clobber state")

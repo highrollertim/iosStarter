@@ -176,11 +176,20 @@ final class SearchViewModel {
             guard !Task.isCancelled else { return }
             state = .loaded(repos, isRefreshing: false)
             lastRefreshed = .now
-        } catch is CancellationError {
-            // A newer search superseded this one; its results own the screen.
-            // Deliberately does *not* clear `lastDispatchedQuery`: the newer
-            // search already owns it.
         } catch {
+            // One catch, and it asks the cancellation *flag*, never the error
+            // *type*. A `CancellationError` is not proof that this task was
+            // cancelled: `LiveGitHubClient` maps every `URLError(.cancelled)`
+            // to one, and `URLSession` raises that for session invalidation
+            // and other teardown too. Trusting the type meant an uncancelled
+            // task could exit here leaving `.loading` on screen forever —
+            // with the query still recorded as dispatched, so Retry never
+            // rendered (it lives on `.failed`) and retyping was filtered out.
+            //
+            // Asking the flag instead covers both: a genuinely superseded
+            // search returns silently through the guard, its successor owning
+            // both the screen and the dedup key; anything else becomes a
+            // `.failed` the user can actually act on.
             guard !Task.isCancelled else { return }
             // A failed query is repeatable — forget that we dispatched it so
             // the `filter` in `init` lets the identical text through again.

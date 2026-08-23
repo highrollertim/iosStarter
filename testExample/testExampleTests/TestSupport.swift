@@ -55,6 +55,38 @@ actor ScriptedGitHubClient: GitHubClient {
     }
 }
 
+/// Throws `CancellationError` from a task that was never cancelled.
+///
+/// Not a contrived double. `LiveGitHubClient` maps every
+/// `URLError(.cancelled)` to `CancellationError`, and `URLSession` raises
+/// that code for reasons that have nothing to do with `Task` cancellation —
+/// an invalidated session, a torn-down background configuration, an
+/// authentication challenge the delegate refused. From the view model's side
+/// those are ordinary failures wearing cancellation's clothes, and this
+/// double is how a test can say so.
+actor RogueCancellationGitHubClient: GitHubClient {
+    private(set) var queries: [String] = []
+    private var thrown = 0
+    private let failures: Int
+    private let repos: [Repo]
+
+    /// - Parameter failures: how many leading calls throw `CancellationError`
+    ///   before the client starts succeeding.
+    init(failures: Int = 1, repos: [Repo] = .fixture) {
+        self.failures = failures
+        self.repos = repos
+    }
+
+    func searchRepositories(matching query: String) async throws -> [Repo] {
+        queries.append(query)
+        if thrown < failures {
+            thrown += 1
+            throw CancellationError()
+        }
+        return repos
+    }
+}
+
 /// Suspends every request until the test calls `open()`, letting tests
 /// observe in-flight (`.loading`) state deterministically — no sleeps.
 ///
@@ -115,10 +147,9 @@ actor GatedGitHubClient: GitHubClient {
 /// you don't control. Plenty of real async APIs never check
 /// `Task.isCancelled`, and `URLSession` itself will happily deliver a response
 /// that was already in flight. `SearchViewModel`'s post-`await`
-/// `Task.isCancelled` guard exists precisely for that case, and this double is
-/// the only way to reach it: against a cancellation-honouring client the
-/// `catch is CancellationError` branch fires first and the guard is never
-/// exercised.
+/// `Task.isCancelled` guard is what stands between that late success and the
+/// screen, and a client that *does* honour cancellation can never reach it:
+/// it throws instead of returning. This double is the only way in.
 actor UncancellableGatedGitHubClient: GitHubClient {
     private var waiters: [CheckedContinuation<Void, Never>] = []
     private let repos: [Repo]
