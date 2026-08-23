@@ -430,7 +430,7 @@ item in this section: a repo that exists to be read must build from a clone.
 here, not a placeholder: there is no analytics SDK, so no collected data
 types; no advertising or attribution, so no tracking domains; and none of
 Apple's required-reason APIs are called — favorites live in SwiftData rather
-than `UserDefaults`, and the one launch-argument check reads `ProcessInfo`,
+than `UserDefaults`, and the launch-argument checks read `ProcessInfo`,
 which is not on the list. An app that collects nothing still has to say so;
 a missing manifest reads as an incomplete submission, not as an innocent one.
 (The reasoning lives here because plists cannot carry comments.)
