@@ -13,9 +13,14 @@ struct RepoDetailView: View {
     @Environment(\.modelContext) private var modelContext
     @Query private var matches: [FavoriteRepo]
 
-    /// Counts *taps*, so haptic feedback can be triggered by the user's
-    /// action rather than by an observed change in the store.
+    /// Counts *successful* toggles, so haptic feedback is triggered by a write
+    /// that actually happened rather than by an observed change in the store.
     @State private var toggleCount = 0
+
+    /// Which way the last successful toggle went, recorded at tap time from
+    /// the value the tap acted on. The feedback closure below reads this
+    /// instead of `isFavorite`, which by then may or may not have caught up.
+    @State private var lastToggleAddedFavorite = false
 
     init(repo: Repo) {
         self.repo = repo
@@ -87,10 +92,19 @@ struct RepoDetailView: View {
                 // Triggering on `isFavorite` fired on *arrival* at an
                 // already-favorited repo, because the `@Query` resolving from
                 // false to true is a change like any other — a haptic for
-                // something the user did not do. It also gave `.success` to
-                // unfavoriting, which is a removal, not an achievement.
+                // something the user did not do.
+                //
+                // Which feedback to play is decided the same way: from the
+                // intent recorded at tap time, never from `isFavorite`. That
+                // read comes back through `@Query` on a later update — the
+                // `.animation` above is right about that timing — so asking it
+                // here reads whichever side of the write happened to have
+                // landed, and reliably played "removed" for an add on the
+                // first tap. And the counter only advances when the write
+                // succeeded, so a failed toggle produces no haptic at all
+                // rather than confirming something that did not happen.
                 .sensoryFeedback(trigger: toggleCount) { _, _ in
-                    isFavorite ? .success : .impact(weight: .light)
+                    lastToggleAddedFavorite ? .success : .impact(weight: .light)
                 }
                 // VoiceOver announces "selected" for a favorited repo, so the
                 // state is audible and not only in the symbol.
@@ -101,9 +115,14 @@ struct RepoDetailView: View {
     }
 
     private func toggleFavorite() {
-        toggleCount += 1
+        // Read before the write: this is what the tap meant, and the only
+        // moment `isFavorite` is guaranteed to describe the state the user
+        // acted on.
+        let willAdd = !isFavorite
         do {
             try FavoritesStore(context: modelContext).toggle(repo)
+            lastToggleAddedFavorite = willAdd
+            toggleCount += 1
         } catch {
             // A local-store write failing is exceptional; log rather than
             // interrupt. (A data-critical app would surface an alert here.)
