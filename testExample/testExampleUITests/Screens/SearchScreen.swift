@@ -53,6 +53,17 @@ struct SearchScreen {
         app.buttons["search.retryButton"]
     }
 
+    /// Selects the Search tab, matching `FavoritesScreen.open()`.
+    ///
+    /// Queried by identifier, which `Tab` carries onto the tab-bar button that
+    /// selects it — so this survives `-testLanguage de`, where the tab reads
+    /// "Suchen". The one test that used to reach for `app.tabBars` inline was
+    /// the only place in the suite that named a raw query outside a screen
+    /// object, which is exactly the leak these types exist to stop.
+    func open() {
+        app.tabBars.buttons["tab.search"].tap()
+    }
+
     func search(for query: String) {
         focusField()
         searchField.typeText(query)
@@ -106,7 +117,7 @@ struct SearchScreen {
     }
 
     /// The results list itself, which is one view across `.loaded` and
-    /// `.failed(_, stale:)` — the same element, updated, not two lists that
+    /// `.failed(_, stale:, _)` — the same element, updated, not two lists that
     /// take turns.
     var list: XCUIElement {
         app.descendants(matching: .any)["search.list"].firstMatch

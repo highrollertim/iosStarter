@@ -39,7 +39,15 @@ final class SearchViewModel {
     /// query nobody has run yet.
     private(set) var lastCompletedQuery: String?
     /// The trimmed query whose failure put the current banner on screen, or
-    /// `nil` when the last thing that happened was not a failure.
+    /// `nil` when no *completed* search has failed since the last success or
+    /// the last trip to idle.
+    ///
+    /// "Completed" is the load-bearing word, and it is why this is not simply
+    /// "nil unless `state` is `.failed`". A retry launched from the banner
+    /// leaves `state` at `.failed(_, _, isRefreshing: true)` while it runs, and
+    /// this property still names the query that put the banner there — because
+    /// nothing has landed yet to change either fact. Only the `catch` and the
+    /// success path below write it.
     ///
     /// The second half of the stale-promotion rule below. `lastCompletedQuery`
     /// alone answers "which query do these rows belong to"; this answers "which
@@ -240,9 +248,18 @@ final class SearchViewModel {
         // Stale-while-revalidate: if results are on screen, keep them there and
         // just flag the refresh — and "on screen" includes the results under a
         // failure banner. Retry from that banner re-enters here with state
-        // `.failed(_, stale:)`; reading only `.loaded` would blank the exact
+        // `.failed(_, stale:, _)`; reading only `.loaded` would blank the exact
         // results the banner promised to preserve, and a second failure would
         // then drop them permanently.
+        //
+        // The failure branch stays `.failed` while its retry runs. It flags
+        // itself with `isRefreshing: true` and keeps its message, so the banner
+        // stays up over the rows with a spinner beside it — which is also what
+        // the screen honestly *is*. Promoting to `.loaded` instead was the
+        // concurrency hole: the `.loaded` branch below is ungated on purpose,
+        // so a query dispatched while the retry was still in flight matched it
+        // and inherited these rows without ever being asked whether they were
+        // its own. See `LoadState`.
         //
         // The gate, and it is a middle ground between two wrong answers.
         //
@@ -280,9 +297,13 @@ final class SearchViewModel {
         if case .loaded(let existing, _) = state {
             state = .loaded(existing, isRefreshing: true)
             staleResults = existing
-        } else if case .failed(_, let stale?) = state, !stale.isEmpty,
+        } else if case .failed(let existingMessage, let stale?, _) = state, !stale.isEmpty,
                   trimmed == lastCompletedQuery || trimmed == lastFailedQuery {
-            state = .loaded(stale, isRefreshing: true)
+            // The message is re-bound and written back rather than replaced:
+            // the failure the banner is about has not been resolved by anyone
+            // deciding to retry it, so the banner must keep saying the same
+            // thing until this attempt lands.
+            state = .failed(message: existingMessage, stale: stale, isRefreshing: true)
             staleResults = stale
         } else {
             state = .loading
@@ -335,7 +356,13 @@ final class SearchViewModel {
             // Results already on screen survive the failure. Blanking them
             // would punish the user for a refinement that failed by throwing
             // away the last thing that worked.
-            state = .failed(message: userFacingMessage(for: error), stale: staleResults)
+            state = .failed(
+                message: userFacingMessage(for: error),
+                stale: staleResults,
+                // This attempt is over, whatever it was: a first load, a
+                // refinement, or the retry that entered here already `.failed`.
+                isRefreshing: false
+            )
         }
     }
 
@@ -398,8 +425,16 @@ final class SearchViewModel {
     func setStateForPreviews(_ state: LoadState<[Repo]>, lastCompletedQuery: String? = nil) {
         self.state = state
         self.lastCompletedQuery = lastCompletedQuery
-        if case .loaded = state {
+        // A failure that kept rows shows the timestamp footer too — that is the
+        // screen where "how old are these?" matters most (see `SearchView`'s
+        // `bottomBar`). Seeding `lastRefreshed` only for `.loaded` left the
+        // "Error (stale kept)" preview rendering a banner over rows with no
+        // timestamp beside it, which is a composition the app never produces.
+        switch state {
+        case .loaded, .failed(_, .some, _):
             lastRefreshed = .now
+        case .idle, .loading, .failed(_, .none, _):
+            break
         }
     }
     #endif

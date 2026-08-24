@@ -43,7 +43,11 @@ struct SearchViewModelTests {
 
         await viewModel.dispatch("swift").value
 
-        #expect(viewModel.state == .failed(message: GitHubClientError.rateLimited.errorDescription ?? "", stale: nil))
+        #expect(viewModel.state == .failed(
+            message: GitHubClientError.rateLimited.errorDescription ?? "",
+            stale: nil,
+            isRefreshing: false
+        ))
     }
 
     @Test("blank queries reset to idle without hitting the network", arguments: ["", "   ", "\n"])
@@ -122,23 +126,27 @@ struct SearchViewModelTests {
         await viewModel.dispatch("swiftui").value
         #expect(viewModel.state == .failed(
             message: GitHubClientError.rateLimited.errorDescription ?? "",
-            stale: .fixture
+            stale: .fixture,
+            isRefreshing: false
         ))
     }
 
     @Test("retrying the query the stale rows answer keeps them on screen throughout")
     func retryFromFailureBannerPreservesStaleResults() async throws {
-        // The banner's Retry re-enters `search` with state `.failed(_, stale:)`,
-        // and the promotion has to read that shape too: reading only `.loaded`
-        // would blank the results the banner promised to preserve, and a second
-        // failure would then drop them permanently.
+        // The banner's Retry re-enters `search` with state
+        // `.failed(_, stale:, _)`, and the promotion has to read that shape
+        // too: reading only `.loaded` would blank the results the banner
+        // promised to preserve, and a second failure would then drop them
+        // permanently.
         //
         // The *middle* of the retry is the part worth pinning, and it is
         // invisible to a test that only inspects terminal states — which is
         // what the previous version of this test did. Gating the client is
         // what makes the in-flight moment observable: while the retry is
-        // suspended, the rows must be back on screen and flagged refreshing,
-        // not replaced by a spinner.
+        // suspended, the rows must still be on screen and flagged refreshing,
+        // not replaced by a spinner — and the state must still be `.failed`,
+        // because it still is one. See `keptRowsCannotOutliveTheRetryTheySatUnder`
+        // for what promoting to `.loaded` here cost.
         let client = KeyedGatedGitHubClient(scripts: [
             "swift": [.success(.fixture), .failure(.rateLimited), .failure(.network)]
         ])
@@ -155,7 +163,8 @@ struct SearchViewModelTests {
         await viewModel.dispatch("swift").value
         #expect(viewModel.state == .failed(
             message: GitHubClientError.rateLimited.errorDescription ?? "",
-            stale: .fixture
+            stale: .fixture,
+            isRefreshing: false
         ))
 
         // The user taps Retry. `retry()` delegates to `dispatch(searchText)`;
@@ -163,14 +172,22 @@ struct SearchViewModelTests {
         // minus the field bookkeeping this test never set up.
         let retry = viewModel.dispatch("swift")
         try await poll(until: { await client.isPending("swift") }, message: "the retry to be in flight")
-        #expect(viewModel.state == .loaded(.fixture, isRefreshing: true))
+        // Still a failure, and now a refreshing one: banner up, rows kept,
+        // spinner on. The message is the one the banner already carried —
+        // nothing has landed that could change what it says.
+        #expect(viewModel.state == .failed(
+            message: GitHubClientError.rateLimited.errorDescription ?? "",
+            stale: .fixture,
+            isRefreshing: true
+        ))
 
         // And a second failure still carries the same results forward.
         await client.open("swift")
         await retry.value
         #expect(viewModel.state == .failed(
             message: GitHubClientError.network.errorDescription ?? "",
-            stale: .fixture
+            stale: .fixture,
+            isRefreshing: false
         ))
     }
 
@@ -200,7 +217,8 @@ struct SearchViewModelTests {
         await viewModel.dispatch("swiftui").value
         #expect(viewModel.state == .failed(
             message: GitHubClientError.rateLimited.errorDescription ?? "",
-            stale: .fixture
+            stale: .fixture,
+            isRefreshing: false
         ))
         // The two keys have genuinely parted company here, which is what makes
         // this test cover a disjunct the same-query one cannot.
@@ -209,14 +227,112 @@ struct SearchViewModelTests {
 
         let retry = viewModel.dispatch("swiftui")
         try await poll(until: { await client.isPending("swiftui") }, message: "the banner's retry to be in flight")
-        #expect(viewModel.state == .loaded(.fixture, isRefreshing: true))
+        // "swift"'s rows, under "swiftui"'s banner, with "swiftui"'s retry in
+        // flight — and the state says all three of those things at once.
+        #expect(viewModel.state == .failed(
+            message: GitHubClientError.rateLimited.errorDescription ?? "",
+            stale: .fixture,
+            isRefreshing: true
+        ))
 
         await client.open("swiftui")
         await retry.value
         #expect(viewModel.state == .failed(
             message: GitHubClientError.network.errorDescription ?? "",
-            stale: .fixture
+            stale: .fixture,
+            isRefreshing: false
         ))
+    }
+
+    @Test("rows kept under a banner cannot be inherited by a query dispatched during its retry")
+    func keptRowsCannotOutliveTheRetryTheySatUnder() async throws {
+        // The bug this pins, and it needed three states to see.
+        //
+        // The gate in `search(matching:)` is asymmetric on purpose: the
+        // `.failed` branch asks "is this query one these rows belong to?", the
+        // `.loaded` branch asks nothing at all. That asymmetry is sound while
+        // the two cases mean what they say — rows in a genuine `.loaded` were
+        // produced by the query being refreshed. It stops being sound the
+        // moment a *failure* can be written as `.loaded`.
+        //
+        // Which is exactly what the retry used to do: it promoted
+        // `.failed(msg, stale: swiftRows, ...)` to
+        // `.loaded(swiftRows, isRefreshing: true)` for the duration of the
+        // request. Any query dispatched inside that window — a keystroke, a
+        // pull — read a `.loaded` that had never loaded anything, took the
+        // ungated branch, and adopted rows answering a different question as
+        // its own. Its failure then carried them forward as *its* stale
+        // results, and the next retry laundered them again. Under rate
+        // limiting the screen drifted arbitrarily far from anything the user
+        // had asked for.
+        //
+        // Terminal states cannot catch it: the mid-flight moment is where the
+        // laundering happens, and both halves of that moment are asserted
+        // below. Restore the promotion to `.loaded` and this test fails twice
+        // over — on `.loading`, and on `stale: nil`.
+        let client = KeyedGatedGitHubClient(
+            repos: ["swift": .fixture],
+            scripts: [
+                "swiftui": [.failure(.rateLimited), .failure(.network)],
+                "kotlin": [.failure(.network)],
+            ]
+        )
+        let viewModel = SearchViewModel(client: client, debounceInterval: Self.neverFires)
+
+        // "swift" succeeds. These are the rows everything below is about.
+        await client.open("swift")
+        await viewModel.dispatch("swift").value
+        #expect(viewModel.state == .loaded(.fixture, isRefreshing: false))
+
+        // "swiftui" fails, and keeps them under its banner.
+        await client.open("swiftui")
+        await viewModel.dispatch("swiftui").value
+        #expect(viewModel.state == .failed(
+            message: GitHubClientError.rateLimited.errorDescription ?? "",
+            stale: .fixture,
+            isRefreshing: false
+        ))
+
+        // The banner's own Retry, held open by the gate so the window is
+        // observable rather than instantaneous.
+        let retry = viewModel.dispatch("swiftui")
+        try await poll(until: { await client.isPending("swiftui") }, message: "the banner's retry to be in flight")
+        #expect(viewModel.state == .failed(
+            message: GitHubClientError.rateLimited.errorDescription ?? "",
+            stale: .fixture,
+            isRefreshing: true
+        ))
+
+        // "kotlin" has no history under either key, so it is entitled to
+        // nothing that is currently on screen.
+        #expect(viewModel.lastCompletedQuery == "swift")
+        #expect(viewModel.lastFailedQuery == "swiftui")
+
+        // The user types it while the retry is still out. `dispatch(_:)`
+        // cancels the retry, and the state the new search reads is the one
+        // asserted just above.
+        let fresh = viewModel.dispatch("kotlin")
+        try await poll(until: { await client.isPending("kotlin") }, message: "the new query to be in flight")
+        // Awaited here, not at the end: the cancelled retry has to be provably
+        // *finished* before the assertion, or "it wrote nothing" would only
+        // mean "it had not written yet".
+        await retry.value
+        // The first half. A blank screen with a spinner is the correct answer
+        // for a query with nothing of its own to show.
+        #expect(viewModel.state == .loading)
+
+        await client.open("kotlin")
+        await fresh.value
+
+        // The second half. "swift"'s rows do not survive into "kotlin"'s
+        // failure: this is a first-load failure for this query, so it has
+        // nothing to keep and gets the full-screen presentation.
+        #expect(viewModel.state == .failed(
+            message: GitHubClientError.network.errorDescription ?? "",
+            stale: nil,
+            isRefreshing: false
+        ))
+        #expect(viewModel.lastFailedQuery == "kotlin")
     }
 
     @Test("refreshing after a failed refinement keeps the rows it re-runs")
@@ -240,12 +356,19 @@ struct SearchViewModelTests {
         await viewModel.dispatch("swiftui").value
         #expect(viewModel.state == .failed(
             message: GitHubClientError.rateLimited.errorDescription ?? "",
-            stale: .fixture
+            stale: .fixture,
+            isRefreshing: false
         ))
 
         let refresh = viewModel.dispatch("swift")
         try await poll(until: { await client.isPending("swift") }, message: "the refresh to be in flight")
-        #expect(viewModel.state == .loaded(.fixture, isRefreshing: true))
+        // The pull kept the rows and the banner: nothing has succeeded yet, so
+        // the failure is still the truth about this screen.
+        #expect(viewModel.state == .failed(
+            message: GitHubClientError.rateLimited.errorDescription ?? "",
+            stale: .fixture,
+            isRefreshing: true
+        ))
 
         await client.open("swift")
         await refresh.value
@@ -284,7 +407,8 @@ struct SearchViewModelTests {
         await viewModel.dispatch("swift").value
         #expect(viewModel.state == .failed(
             message: GitHubClientError.rateLimited.errorDescription ?? "",
-            stale: staleResult
+            stale: staleResult,
+            isRefreshing: false
         ))
 
         let fresh = viewModel.dispatch("swiftui")
@@ -297,7 +421,8 @@ struct SearchViewModelTests {
         // first-load failure, and gets the full-screen presentation.
         #expect(viewModel.state == .failed(
             message: GitHubClientError.network.errorDescription ?? "",
-            stale: nil
+            stale: nil,
+            isRefreshing: false
         ))
     }
 
@@ -321,7 +446,8 @@ struct SearchViewModelTests {
         await viewModel.dispatch("zzzz").value
         #expect(viewModel.state == .failed(
             message: GitHubClientError.rateLimited.errorDescription ?? "",
-            stale: []
+            stale: [],
+            isRefreshing: false
         ))
 
         let retry = viewModel.dispatch("zzzz")
@@ -376,7 +502,8 @@ struct SearchViewModelTests {
 
         #expect(viewModel.state == .failed(
             message: GitHubClientError.network.errorDescription ?? "",
-            stale: nil
+            stale: nil,
+            isRefreshing: false
         ))
     }
 
@@ -636,7 +763,11 @@ struct SearchViewModelTests {
         try await poll(
             until: {
                 viewModel.state
-                    == .failed(message: GitHubClientError.rateLimited.errorDescription ?? "", stale: nil)
+                    == .failed(
+                        message: GitHubClientError.rateLimited.errorDescription ?? "",
+                        stale: nil,
+                        isRefreshing: false
+                    )
             },
             message: "first attempt to fail"
         )
@@ -658,7 +789,11 @@ struct SearchViewModelTests {
         viewModel.searchText = "swift"
 
         await viewModel.dispatch("swift").value
-        #expect(viewModel.state == .failed(message: GitHubClientError.rateLimited.errorDescription ?? "", stale: nil))
+        #expect(viewModel.state == .failed(
+            message: GitHubClientError.rateLimited.errorDescription ?? "",
+            stale: nil,
+            isRefreshing: false
+        ))
 
         viewModel.retry()
         try await poll(
@@ -679,7 +814,11 @@ struct SearchViewModelTests {
         viewModel.searchText = "swift"
 
         await viewModel.dispatch("swift").value
-        #expect(viewModel.state == .failed(message: GitHubClientError.rateLimited.errorDescription ?? "", stale: nil))
+        #expect(viewModel.state == .failed(
+            message: GitHubClientError.rateLimited.errorDescription ?? "",
+            stale: nil,
+            isRefreshing: false
+        ))
 
         viewModel.searchText = ""
         viewModel.retry()

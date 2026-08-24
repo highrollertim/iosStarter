@@ -128,8 +128,8 @@ final class SearchFlowUITests: XCTestCase {
         // The state no other UI test reaches: a failure *with results still on
         // screen*. It is the whole reason `LoadState.failed` carries `stale`,
         // and the reason the list is hoisted out of the state switch — one
-        // list identity across `.loaded` and `.failed(_, stale:)`, so the rows
-        // are updated rather than destroyed and rebuilt.
+        // list identity across `.loaded` and `.failed(_, stale:, _)`, so the
+        // rows are updated rather than destroyed and rebuilt.
         //
         // `searchSucceedsThenFails` succeeds the first completed call for each
         // query and fails every later one for that same query. So the first
@@ -170,10 +170,21 @@ final class SearchFlowUITests: XCTestCase {
         }
 
         Then("the rows never left, and the second failure keeps them too") {
-            // Immediately: the retry promotes the stale rows back to a
-            // refreshing `.loaded`, so the list is still on screen with its
-            // rows while the request is in flight. When the failure lands, the
-            // banner returns over the same rows.
+            // The first line is a **smoke check**, not the witness. It asserts
+            // that the rows exist at some point after the tap, and a UI test
+            // cannot pin *when* that point is: the request may already have
+            // failed by the time the query resolves, in which case the rows it
+            // finds are the ones the second banner is sitting on rather than
+            // the ones the retry kept. Nothing here distinguishes those.
+            //
+            // The mid-flight moment — the state stays `.failed` with the rows
+            // kept and `isRefreshing: true`, and does *not* launder itself
+            // into `.loaded` — is pinned by the unit suite, where the client
+            // can be held open on demand: see
+            // `SearchViewModelTests.retryFromFailureBannerPreservesStaleResults()`
+            // and `keptRowsCannotOutliveTheRetryTheySatUnder()`. What this test
+            // adds that they cannot is that the real `List` survives the whole
+            // round trip on a real screen.
             XCTAssertTrue(search.row(for: "apple/swift").exists)
             XCTAssertTrue(search.errorView.waitForExistence(timeout: 10))
             XCTAssertTrue(search.row(for: "apple/swift").exists)

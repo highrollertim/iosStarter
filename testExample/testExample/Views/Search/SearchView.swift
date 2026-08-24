@@ -67,16 +67,25 @@ struct SearchView: View {
     private var displayedRows: [Repo]? {
         switch viewModel.state {
         case .loaded(let repos, _) where !repos.isEmpty: repos
-        case .failed(_, let stale?) where !stale.isEmpty: stale
+        case .failed(_, let stale?, _) where !stale.isEmpty: stale
         default: nil
         }
     }
 
-    /// True only while a `.loaded` state is revalidating. The failure states
-    /// are never "refreshing": the banner, not the spinner, is what they have
-    /// to say.
+    /// True while *either* kind of state is revalidating.
+    ///
+    /// A failure can be refreshing — that is precisely what the banner's own
+    /// Retry produces, and the state stays `.failed` for the whole of it (see
+    /// `LoadState`). So the banner does not disappear while its retry runs;
+    /// the spinner and the timestamp appear *below* it, in the same bar, and
+    /// the rows stay where they are. Reading only `.loaded` here would leave
+    /// the one moment the user most wants feedback about — "did my tap do
+    /// anything?" — with no indicator at all.
     private var isRefreshing: Bool {
-        if case .loaded(_, let refreshing) = viewModel.state { refreshing } else { false }
+        switch viewModel.state {
+        case .loaded(_, let refreshing), .failed(_, _, let refreshing): refreshing
+        case .idle, .loading: false
+        }
     }
 
     @ViewBuilder
@@ -86,7 +95,7 @@ struct SearchView: View {
             // `FavoritesView` spells out for its empty state, in the other
             // direction. There it is one `List` for its whole lifetime with the
             // empty state as an overlay; here it is one `List` across
-            // `.loaded` ↔ `.failed(_, stale:)`. A `List` built in one `switch`
+            // `.loaded` ↔ `.failed(_, stale:, _)`. A `List` built in one `switch`
             // arm and an identical `List` built in another are two *different*
             // views to SwiftUI, so crossing between them destroys and rebuilds:
             // scroll position resets, rows cut instead of animating, and every
@@ -141,11 +150,20 @@ struct SearchView: View {
             // needs no announcement for the opposite reason: replacing the
             // content relocates focus, which the system speaks by itself.
             .onChange(of: viewModel.state) { previous, current in
-                guard case .failed(let message, let stale?) = current, !stale.isEmpty else { return }
-                // Only on the way *in*. Retrying from the banner and failing
-                // again lands on `.failed` from `.loaded`, which is a new
-                // failure and worth saying; `.failed` → `.failed` is not.
-                if case .failed = previous { return }
+                guard case .failed(let message, let stale?, _) = current, !stale.isEmpty else { return }
+                // Two arrivals are worth speaking and one is not, and the
+                // discriminator is the *previous* state's refresh flag rather
+                // than its case. Arriving from `.loaded` is a new failure.
+                // Arriving from a failure that was already refreshing is a
+                // retry landing — also new, and the message may well have
+                // changed. What must stay silent is the retry *starting*:
+                // `.failed(m, rows, false)` → `.failed(m, rows, true)`, where
+                // nothing the user could hear has changed. Testing `if case
+                // .failed = previous` alone used to be right only because the
+                // retry laundered itself through `.loaded` on the way; it does
+                // not any more (see `LoadState`), so it would now swallow the
+                // re-failure it was written to announce.
+                if case .failed(_, _, let previouslyRefreshing) = previous, !previouslyRefreshing { return }
                 AccessibilityNotification.Announcement(message).post()
             }
         } else {
@@ -197,14 +215,18 @@ struct SearchView: View {
                         ProgressView()
                             .controlSize(.small)
                             .padding()
-                            .accessibilityIdentifier("search.emptyRefreshing")
                             // Ambient status, like the footer's spinner: the
                             // content here is the "no results" message, and an
                             // unlabelled progress element beside it is noise.
+                            // Hidden, and therefore deliberately *not*
+                            // identified: an accessibility identifier on a
+                            // hidden element is unreachable from XCUITest, so
+                            // one here would only have been a promise no test
+                            // could ever keep.
                             .accessibilityHidden(true)
                     }
                 }
-            case .failed(let message, _):
+            case .failed(let message, _, _):
                 // Nothing to keep: a load with no results behind it failed, or
                 // the last thing that succeeded had no results to preserve.
                 // Same two identifiers as the banner below — only one of the
@@ -240,11 +262,13 @@ struct SearchView: View {
     /// the banner alone. "Updated N seconds ago" matters most precisely when
     /// the rows above it are stale: it is the only thing on screen that says
     /// how old the results the user is still reading actually are, and the
-    /// failure is the moment that stops being a detail.
+    /// failure is the moment that stops being a detail. It is also where the
+    /// banner's own retry reports itself: the state stays `.failed` for the
+    /// duration, so the banner holds still and the spinner appears beneath it.
     @ViewBuilder
     private var bottomBar: some View {
         VStack(spacing: 0) {
-            if case .failed(let message, _) = viewModel.state {
+            if case .failed(let message, _, _) = viewModel.state {
                 ErrorBanner(message: message) { viewModel.retry() }
             }
             LastRefreshedFooter(viewModel: viewModel, isRefreshing: isRefreshing)
@@ -356,16 +380,24 @@ private func previewViewModel(
 // traps the moment you tap a row: `RepoDetailView`'s `@Query` has no
 // `modelContext` to resolve against. Any preview of a view that can
 // *navigate* to SwiftData needs the environment its destination expects.
+//
+// Every preview that renders the list passes a `lastCompletedQuery`, because
+// the list carries `.refreshable` and a pull in a preview really does dispatch
+// a search. Without one the pull would run `viewModel.searchText` — the empty
+// string — and the preview would collapse to the idle prompt, which is a
+// confusing thing for a canvas labelled "Results" to do.
 
 #Preview("Results", traits: .sampleData) {
     SearchView(viewModel: previewViewModel(
-        .loaded(MockGitHubClient.fixtureRepos, isRefreshing: false)
+        .loaded(MockGitHubClient.fixtureRepos, isRefreshing: false),
+        lastCompletedQuery: "swift"
     ))
 }
 
 #Preview("Refreshing", traits: .sampleData) {
     SearchView(viewModel: previewViewModel(
-        .loaded(MockGitHubClient.fixtureRepos, isRefreshing: true)
+        .loaded(MockGitHubClient.fixtureRepos, isRefreshing: true),
+        lastCompletedQuery: "swift"
     ))
 }
 
@@ -378,7 +410,11 @@ private func previewViewModel(
 
 #Preview("Error (first load)", traits: .sampleData) {
     SearchView(viewModel: previewViewModel(
-        .failed(message: "GitHub is rate-limiting searches right now. Give it a minute.", stale: nil)
+        .failed(
+            message: "GitHub is rate-limiting searches right now. Give it a minute.",
+            stale: nil,
+            isRefreshing: false
+        )
     ))
 }
 
@@ -386,8 +422,24 @@ private func previewViewModel(
     SearchView(viewModel: previewViewModel(
         .failed(
             message: "GitHub is rate-limiting searches right now. Give it a minute.",
-            stale: MockGitHubClient.fixtureRepos
-        )
+            stale: MockGitHubClient.fixtureRepos,
+            isRefreshing: false
+        ),
+        lastCompletedQuery: "swift"
+    ))
+}
+
+/// The state the banner's own Retry produces, and the reason `failed` carries
+/// an `isRefreshing` of its own: the banner is still up, the rows are still
+/// there, and the spinner beside the timestamp is the only thing that changed.
+#Preview("Error (stale kept, retrying)", traits: .sampleData) {
+    SearchView(viewModel: previewViewModel(
+        .failed(
+            message: "GitHub is rate-limiting searches right now. Give it a minute.",
+            stale: MockGitHubClient.fixtureRepos,
+            isRefreshing: true
+        ),
+        lastCompletedQuery: "swift"
     ))
 }
 #endif
