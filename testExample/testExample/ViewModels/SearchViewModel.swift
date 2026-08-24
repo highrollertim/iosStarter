@@ -38,6 +38,20 @@ final class SearchViewModel {
     /// live field, still ahead of the debounce, so titling with it shows a
     /// query nobody has run yet.
     private(set) var lastCompletedQuery: String?
+    /// The trimmed query whose failure put the current banner on screen, or
+    /// `nil` when the last thing that happened was not a failure.
+    ///
+    /// The second half of the stale-promotion rule below. `lastCompletedQuery`
+    /// alone answers "which query do these rows belong to"; this answers "which
+    /// query is the banner about", and the banner's own Retry re-runs *that*
+    /// one — which after a failed refinement is not the same string.
+    ///
+    /// Cleared on success and on the blank trip to idle, so it never names a
+    /// query that has since worked. The promotion reads it only while `state`
+    /// is `.failed`, and the `catch` writes both in one main-actor turn, so the
+    /// two can't disagree there — but this is a readable property, and a
+    /// readable property has no business lying.
+    private(set) var lastFailedQuery: String?
     /// Ticks once per second while `startTicker()` has been called, so
     /// "Updated Ns ago" stays current. Scoped, not free-running — see
     /// `startTicker()`/`stopTicker()`.
@@ -210,6 +224,9 @@ final class SearchViewModel {
         guard !trimmed.isEmpty else {
             state = .idle
             lastCompletedQuery = nil
+            // The banner is gone with the state, so the query it was about is
+            // no longer a thing anything should promote rows for.
+            lastFailedQuery = nil
             // Belt and braces for any future caller that reaches this method
             // without going through `dispatch(_:)`. It is not what makes
             // retyping a cleared field work: `dispatch(_:)` writes the key
@@ -227,16 +244,32 @@ final class SearchViewModel {
         // results the banner promised to preserve, and a second failure would
         // then drop them permanently.
         //
-        // The promotion is gated on `trimmed == lastCompletedQuery`, because it
-        // is only sound for *retrying the query those stale rows answer*.
-        // Ungated, a brand-new query typed from a failure screen resurrected
+        // The gate, and it is a middle ground between two wrong answers.
+        //
+        // The stale rows stay when the incoming query is either the one they
+        // answer — pull-to-refresh (which re-runs `lastCompletedQuery`) or
+        // re-submitting the same text — or the one whose failure put the banner
+        // up: `lastFailedQuery`, which is what the banner's own Retry re-runs.
+        // After a failed *refinement* those are two different strings, and
+        // banner-Retry is the founding case of the whole feature; a gate that
+        // only knew `lastCompletedQuery` blanked the rows on the one tap the
+        // banner exists to offer.
+        //
+        // A brand-new query still starts blank, and that half is not
+        // negotiable. Ungated, anything typed from a failure screen resurrected
         // the previous query's rows and showed them as its own — one search's
         // results labelled as another's, with a spinner claiming they were
         // being refreshed. Under rate limiting that compounds: every subsequent
         // failure carries the same ancient rows forward again, and the screen
-        // drifts further from anything the user asked for. A new query with no
+        // drifts further from anything the user asked for. A query with no
         // history of its own has nothing to keep, and the blank screen is the
         // correct answer for it.
+        //
+        // What the middle ground concedes: after a failed refinement, Retry
+        // does show the *previous* query's rows under the refinement's banner.
+        // That is the screen the user is already looking at, and Retry is a
+        // request to repeat what just happened — not a new question — so
+        // leaving it unchanged beats blanking it.
         //
         // `staleResults` is produced *by* the branch that decides the state, so
         // "the failure restores exactly the rows this search was refining" is
@@ -248,7 +281,7 @@ final class SearchViewModel {
             state = .loaded(existing, isRefreshing: true)
             staleResults = existing
         } else if case .failed(_, let stale?) = state, !stale.isEmpty,
-                  trimmed == lastCompletedQuery {
+                  trimmed == lastCompletedQuery || trimmed == lastFailedQuery {
             state = .loaded(stale, isRefreshing: true)
             staleResults = stale
         } else {
@@ -275,6 +308,7 @@ final class SearchViewModel {
             guard !Task.isCancelled else { return }
             state = .loaded(repos, isRefreshing: false)
             lastCompletedQuery = trimmed
+            lastFailedQuery = nil
             lastRefreshed = .now
         } catch {
             // One catch, and it asks the cancellation *flag*, never the error
@@ -294,6 +328,10 @@ final class SearchViewModel {
             // A failed query is repeatable — forget that we dispatched it so
             // the `filter` in `init` lets the identical text through again.
             lastDispatchedQuery = nil
+            // Recorded in the same turn as the `.failed` below, which is what
+            // makes "the query the banner is about" a fact rather than a guess
+            // when Retry re-enters the promotion above.
+            lastFailedQuery = trimmed
             // Results already on screen survive the failure. Blanking them
             // would punish the user for a refinement that failed by throwing
             // away the last thing that worked.

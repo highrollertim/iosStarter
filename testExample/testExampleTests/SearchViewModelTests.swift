@@ -174,14 +174,99 @@ struct SearchViewModelTests {
         ))
     }
 
+    @Test("retrying a failed refinement keeps the rows the banner is sitting on")
+    func retryingAFailedRefinementKeepsTheRowsUnderTheBanner() async throws {
+        // The `lastFailedQuery` half of the gate, and the case the feature was
+        // built for. A refinement fails, so the banner is about "swiftui" while
+        // the rows underneath it are "swift"'s. The banner's Retry re-runs
+        // *its own* query — `retry()` submits `searchText` — so a gate that
+        // only recognised `lastCompletedQuery` sent this tap to `.loading` and
+        // blanked the rows the banner had just promised to keep.
+        //
+        // The in-flight moment is the whole assertion: terminal states cannot
+        // tell a promotion from a fresh load that happened to fail with the
+        // same stale array attached.
+        let client = KeyedGatedGitHubClient(
+            repos: ["swift": .fixture],
+            scripts: ["swiftui": [.failure(.rateLimited), .failure(.network)]]
+        )
+        let viewModel = SearchViewModel(client: client, debounceInterval: Self.neverFires)
+
+        await client.open("swift")
+        await viewModel.dispatch("swift").value
+        #expect(viewModel.state == .loaded(.fixture, isRefreshing: false))
+
+        await client.open("swiftui")
+        await viewModel.dispatch("swiftui").value
+        #expect(viewModel.state == .failed(
+            message: GitHubClientError.rateLimited.errorDescription ?? "",
+            stale: .fixture
+        ))
+        // The two keys have genuinely parted company here, which is what makes
+        // this test cover a disjunct the same-query one cannot.
+        #expect(viewModel.lastCompletedQuery == "swift")
+        #expect(viewModel.lastFailedQuery == "swiftui")
+
+        let retry = viewModel.dispatch("swiftui")
+        try await poll(until: { await client.isPending("swiftui") }, message: "the banner's retry to be in flight")
+        #expect(viewModel.state == .loaded(.fixture, isRefreshing: true))
+
+        await client.open("swiftui")
+        await retry.value
+        #expect(viewModel.state == .failed(
+            message: GitHubClientError.network.errorDescription ?? "",
+            stale: .fixture
+        ))
+    }
+
+    @Test("refreshing after a failed refinement keeps the rows it re-runs")
+    func refreshAfterAFailedRefinementKeepsTheLoadedQuerysRows() async throws {
+        // The `lastCompletedQuery` half, isolated. `.refreshable` dispatches
+        // `lastCompletedQuery`, so a pull from this screen re-runs "swift" —
+        // which is neither the live field nor the query the banner is about,
+        // and is exactly the query the rows on screen answer.
+        //
+        // Deleting the *other* disjunct leaves this passing and the test above
+        // failing, and vice versa: two arms, two witnesses.
+        let client = KeyedGatedGitHubClient(
+            repos: ["swift": .fixture],
+            scripts: ["swiftui": [.failure(.rateLimited)]]
+        )
+        let viewModel = SearchViewModel(client: client, debounceInterval: Self.neverFires)
+
+        await client.open("swift")
+        await viewModel.dispatch("swift").value
+        await client.open("swiftui")
+        await viewModel.dispatch("swiftui").value
+        #expect(viewModel.state == .failed(
+            message: GitHubClientError.rateLimited.errorDescription ?? "",
+            stale: .fixture
+        ))
+
+        let refresh = viewModel.dispatch("swift")
+        try await poll(until: { await client.isPending("swift") }, message: "the refresh to be in flight")
+        #expect(viewModel.state == .loaded(.fixture, isRefreshing: true))
+
+        await client.open("swift")
+        await refresh.value
+        #expect(viewModel.state == .loaded(.fixture, isRefreshing: false))
+        // A success clears the banner's query along with the banner.
+        #expect(viewModel.lastFailedQuery == nil)
+    }
+
     @Test("a new query typed from a failure does not resurrect the old query's rows")
     func newQueryFromAFailureStartsBlank() async throws {
-        // The promotion is for *retrying the query the stale rows answer*.
-        // Ungated, it fired for any query dispatched from a failure — so
-        // typing something new showed the previous search's results as the new
-        // query's own, with a spinner claiming they were being refreshed. A
-        // query with no history has nothing to keep, and a blank screen is the
-        // correct answer for it.
+        // The half of the gate that is not negotiable. Ungated, the promotion
+        // fired for any query dispatched from a failure — so typing something
+        // new showed the previous search's results as the new query's own, with
+        // a spinner claiming they were being refreshed. A query with no history
+        // has nothing to keep, and a blank screen is the correct answer for it.
+        //
+        // "New" here means new to *both* keys: the search that succeeded was
+        // "swift" and the one that failed was "swift" too, so "swiftui" matches
+        // neither `lastCompletedQuery` nor `lastFailedQuery` and the gate has to
+        // reject it on both counts. Delete the gate entirely and this test
+        // fails; that is what it is for.
         let staleResult: [Repo] = [
             Repo(id: 2, fullName: "stale/repo", ownerLogin: "stale", summary: nil,
                  stargazersCount: 0, forksCount: 0, language: nil,
