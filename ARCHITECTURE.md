@@ -144,32 +144,47 @@ one failure branch to reason about.
 Illegal states stay unrepresentable; the enum just has to be honest about
 which states are actually legal.
 
-**`SearchView`'s switch.** The view's body is a `switch` over
-`viewModel.state` with one branch per case: an empty-state prompt for
-`.idle`, a spinner for `.loading`, a "no results" view for `.loaded` with an
-empty array, the results list for `.loaded` (which passes `isRefreshing` down
-to the footer, so a refinement shows a small spinner beside "Updated 3 seconds
-ago" instead of clearing the list), and — for `.failed` — *two* presentations:
-a compact error bar in a `safeAreaBar` beneath results that are still worth
-reading, or the full-screen error with a retry button when there is nothing to
-keep. (The *model* says only "these are the results that were on screen"; the
-"is that worth showing" judgement lives in the view, which treats an empty
-stale array as nothing to keep — a zero-row list under an error bar is worse
-than the full-screen error.) Because the switch is exhaustive, the compiler
-itself guarantees every
-state the view model can be in has a corresponding screen — there's no way to
-add a fifth `LoadState` case later and forget to handle it in the UI.
+**`SearchView`'s shape.** Not one branch per case, and the difference is
+load-bearing. The view first asks `displayedRows` whether there are rows worth
+reading — a non-empty `.loaded`, or a `.failed` that kept non-empty stale
+results. If there are, the screen is **one** `List`, and `.loaded` and
+`.failed(_, stale:)` are the *same* view identity: crossing between them
+updates a list rather than destroying one and building another. That is what
+keeps the scroll position, lets rows animate, keeps pull-to-refresh reachable
+while the banner is up, and gives the "updated N seconds ago" ticker a
+lifetime that spans the failure instead of restarting on it. The bar under
+that list carries the error banner (when there is one) above the timestamp:
+how old the rows are matters most exactly when they are stale. The same
+identity argument, in the other direction, is why `FavoritesView` keeps one
+`List` and puts its empty state in an `.overlay`.
 
-Two details of that switch come from state living *outside* the enum, which is
-a judgement call worth naming. The empty-results branch titles itself with
+Only when there are no rows does a `switch` decide the screen: the idle
+prompt, the spinner, the "no results" view for an empty `.loaded`, and the
+full-screen error with a retry button for a `.failed` with nothing to keep.
+(The *model* says only "these are the results that were on screen"; the "is
+that worth showing" judgement lives in the view, which treats an empty stale
+array as nothing to keep — a zero-row list under an error bar is worse than
+the full-screen error.)
+
+Be precise about what the compiler checks here. That inner `switch` is
+exhaustive over `LoadState`, so a fifth case could not be added without the UI
+noticing. But the two arms of `displayedRows` are `where`-guarded, and a
+`switch` whose arms are all guarded is not exhaustive — it compiles because of
+an unguarded `default`. Nothing in the type system verifies that those guards
+describe the states they claim to; the tests do.
+
+Two details come from state living *outside* the enum, which is a judgement
+call worth naming. The empty-results branch titles itself with
 `viewModel.lastCompletedQuery`, not `searchText`: the live field is still
 ahead of the debounce and may already hold the next query, so titling with it
-announces "No Results for …" about a search nobody ran. And the results list
-carries `.refreshable`, which is only safe to expose *because* of the
-`dispatch(_:)` funnel — the pull cancels whatever is in flight and becomes the
-search that owns the screen. `lastCompletedQuery` is a property beside `state`
-rather than a payload inside it because `LoadState` is a generic lifecycle
-enum that knows nothing about searching.
+announces "No Results for …" about a search nobody ran. And the list carries
+`.refreshable`, which is only safe to expose *because* of the `dispatch(_:)`
+funnel — the pull cancels whatever is in flight and becomes the search that
+owns the screen — and which re-runs `lastCompletedQuery` rather than the live
+field, so a pull mid-debounce cannot search half-typed text.
+`lastCompletedQuery` is a property beside `state` rather than a payload inside
+it because `LoadState` is a generic lifecycle enum that knows nothing about
+searching.
 
 That's the whole round trip: a keystroke becomes a stream event, the stream
 event becomes (after debouncing) an async call behind a protocol, the async
@@ -395,9 +410,9 @@ inside the `safeAreaBar` builder — and the read is attributed to
 Re-evaluated, not re-rendered: SwiftUI's structural diffing elides the rows
 that did not change, so the cost is the evaluation rather than a full redraw —
 which is still a cost worth not paying once a second. Pulled out into a leaf,
-the once-a-second dependency belongs to a view whose body is two `Text`s. The
-rule: **confine time-driven invalidation to the smallest view that actually
-displays the time.** This is the single most common way a well-behaved
+the once-a-second dependency belongs to a view whose body is a spinner and a
+`Text`. The rule: **confine time-driven invalidation to the smallest view
+that actually displays the time.** This is the single most common way a well-behaved
 `@Observable` app quietly starts re-rendering everything.
 
 The insulation is one-directional, which is the part that is easy to

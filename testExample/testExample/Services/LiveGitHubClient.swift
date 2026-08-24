@@ -1,4 +1,5 @@
 import Foundation
+import OSLog
 
 /// Production `GitHubClient` backed by `URLSession` and `async/await`.
 ///
@@ -77,8 +78,19 @@ nonisolated struct LiveGitHubClient: GitHubClient {
             // throws `CancellationError` itself — so this is the only clause that can
             // observe cancellation here. Surface it as `CancellationError` so callers'
             // cancellation handling stays in one shape.
+            //
+            // `debug`, because the overwhelmingly common cause is a search the
+            // user superseded by typing. It is logged at all because the
+            // *uncommon* cause — session invalidation and other teardown
+            // wearing cancellation's clothes — is otherwise invisible, and it
+            // is the reason callers must ask `Task.isCancelled` rather than
+            // trust this error's type (see `GitHubClientError`).
+            Logger.network.debug("Search request reported cancelled: \(url, privacy: .public)")
             throw CancellationError()
         } catch {
+            Logger.network.error(
+                "Search request failed before a response: \(error.localizedDescription, privacy: .public)"
+            )
             throw GitHubClientError.network
         }
 

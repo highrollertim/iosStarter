@@ -17,7 +17,17 @@ nonisolated protocol GitHubClient: Sendable {
 /// deliberately *not* one of these cases: a superseded request isn't a
 /// failure, so conforming implementations (see `LiveGitHubClient`) let
 /// `CancellationError` propagate unchanged instead of folding it into
-/// `.network`, so callers can tell "cancelled" apart from "actually failed".
+/// `.network`.
+///
+/// What that buys is narrower than it looks, and the distinction is the whole
+/// lesson of this file's error handling. The type is a **hint, not proof**: a
+/// client may raise `CancellationError` for teardown that has nothing to do
+/// with `Task` cancellation — `LiveGitHubClient` maps every
+/// `URLError(.cancelled)` to one, and `URLSession` produces that code for an
+/// invalidated session and other shutdowns as well. A caller that treats the
+/// type as an answer will silently swallow real failures on live tasks.
+/// Callers must ask `Task.isCancelled` instead; see `SearchViewModel`, whose
+/// single `catch` does exactly that.
 nonisolated enum GitHubClientError: Error, Equatable, LocalizedError {
     case invalidQuery
     case network

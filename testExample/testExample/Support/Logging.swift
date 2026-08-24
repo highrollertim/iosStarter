@@ -22,6 +22,21 @@ extension Logger {
         category: "favorites"
     )
 
+    /// The network layer's failures: the two `catch` clauses in
+    /// `LiveGitHubClient.searchRepositories(matching:)`.
+    ///
+    /// This is the category the paragraph above is about — it is logged from
+    /// a `@concurrent` function, off the main actor, which is exactly why
+    /// these are `nonisolated`. It also makes the rogue-`CancellationError`
+    /// story diagnosable in the field: the cancelled clause logs at `debug`
+    /// (a superseded search is routine, not a defect), so a build that is
+    /// silently mapping session teardown onto cancellation shows up as a
+    /// stream of cancellations nobody asked for.
+    nonisolated static let network = Logger(
+        subsystem: Bundle.main.bundleIdentifier ?? "RepoScout",
+        category: "network"
+    )
+
     /// Composition-root and launch-time concerns — currently just the
     /// persistent-store fallback in `AppDependencies`.
     nonisolated static let startup = Logger(

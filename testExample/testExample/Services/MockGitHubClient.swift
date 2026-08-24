@@ -32,9 +32,28 @@ actor MockGitHubClient: GitHubClient {
         /// "swift" produces debounce emissions for prefixes too, and a slow
         /// typist whose "s" completed before "swift" did would burn the one
         /// failure on a query the test never asserts about — leaving "swift"
-        /// to succeed immediately and no error to retry. Keying on the query
-        /// makes the scenario independent of typing speed.
+        /// to succeed immediately and no error to retry.
+        ///
+        /// Precisely what per-query keying buys: a prefix can no longer
+        /// *consume* the failure earmarked for the query under test. It does
+        /// not stop a prefix from failing on its own account and putting a
+        /// banner on screen before the query under test has run — that banner
+        /// is real, and a test that asserts on the *absence* of an error has
+        /// to reckon with it.
         case searchErrorOnce
+        /// The mirror image of `searchErrorOnce`: for each distinct query, the
+        /// first completed call **succeeds** and every later call for that
+        /// same query fails.
+        ///
+        /// The state it exists to reach is the one no other scenario can — a
+        /// failure with results still on screen — and then the retry *from*
+        /// that state. Keyed per query for the same reason as above: a prefix
+        /// emission that completes cannot spend the query-under-test's one
+        /// success, so the flow does not depend on how fast the test types.
+        /// Because every call after the first for a query fails, a retry
+        /// always fails too — which makes "the rows and the banner both
+        /// survive a retry" the assertion this scenario supports.
+        case searchSucceedsThenFails
     }
 
     let scenario: Scenario
@@ -42,6 +61,10 @@ actor MockGitHubClient: GitHubClient {
     /// Queries that have already been failed once by `searchErrorOnce`. Only
     /// that scenario reads it, but it is the reason this type is an actor.
     private var failedQueries: Set<String> = []
+
+    /// Queries that have already been succeeded once by
+    /// `searchSucceedsThenFails`. Same bookkeeping, opposite polarity.
+    private var succeededQueries: Set<String> = []
 
     init(scenario: Scenario = .success) {
         self.scenario = scenario
@@ -71,6 +94,13 @@ actor MockGitHubClient: GitHubClient {
         // debounce sink cancels the previous task on every keystroke) exits
         // here and never records anything. Cancellation is not one of the
         // scenarios; it is the thing that happens instead of one.
+        //
+        // "Never records anything" is a claim about the window, not a
+        // guarantee: this narrows it to a single actor hop. A cancellation
+        // that lands after the sleep returns still spends this query's
+        // outcome, because nothing between here and the `switch` looks at the
+        // flag — and `SearchViewModel`'s `catch` swallows the resulting
+        // failure, so nothing on screen says so either.
         try await Task.sleep(for: .milliseconds(300))
 
         switch scenario {
@@ -81,12 +111,17 @@ actor MockGitHubClient: GitHubClient {
         case .emptyResults:
             return []
         case .searchErrorOnce:
-            // Recorded after the sleep, so a cancelled call never spends this
-            // query's one failure on a request that no UI ever saw.
+            // Recorded after the sleep, so a call cancelled during it never
+            // spends this query's one failure on a request no UI ever saw.
             if failedQueries.insert(query).inserted {
                 throw GitHubClientError.rateLimited
             }
             return Self.fixtureRepos
+        case .searchSucceedsThenFails:
+            if succeededQueries.insert(query).inserted {
+                return Self.fixtureRepos
+            }
+            throw GitHubClientError.rateLimited
         }
     }
 }
