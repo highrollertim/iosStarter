@@ -8,7 +8,7 @@ import XCTest
 /// elements with no description, and mislabelled traits. It is not a
 /// substitute for using the app with VoiceOver — it cannot tell you that a
 /// label is *wrong*, only that one is missing — but it catches the mechanical
-/// regressions that otherwise ship, and it costs one test.
+/// regressions that otherwise ship, and it costs one method call per screen.
 ///
 /// It earned its place immediately: it caught `RepoRowView`'s `.secondary`
 /// text sitting below the WCAG AA contrast threshold at every size in the
@@ -130,6 +130,51 @@ final class AccessibilityAuditUITests: XCTestCase {
         }
     }
 
+    /// The banner screen at the largest accessibility text size, with
+    /// `.textClipped` **not** suppressed.
+    ///
+    /// The test above does this for the results list; this does it for the one
+    /// screen the list test cannot reach, and it is the harder of the two. The
+    /// banner puts a sentence-long message and a `Retry` button on one line;
+    /// at AX5 there is nowhere near room for both, and a control whose title
+    /// has truncated to "Ret…" no longer says what it does. `ErrorBanner`
+    /// answers that at runtime with `ViewThatFits`, exactly as
+    /// `RepoRowView.stats` does — and, exactly as there, the audit's static
+    /// clipping heuristic cannot see a layout that has not been proposed yet.
+    /// So this test is what makes the `.textClipped` suppression on
+    /// `testTheFailureBannerOverResultsPassesTheAccessibilityAudit()` honest:
+    /// if the reflow ever stops rescuing the banner, this fails.
+    @MainActor
+    func testTheFailureBannerSurvivesTheLargestDynamicTypeSize() throws {
+        try skipUnlessRunningInEnglish(matching: "UISearchTextField's \"Clear text\" button")
+
+        let app = XCUIApplication.launchedForUITest(
+            scenario: "searchSucceedsThenFails",
+            contentSizeCategory: Self.largestAccessibilitySize
+        )
+        let search = SearchScreen(app: app)
+
+        Given("the failure banner is on screen at the largest accessibility text size") {
+            XCTAssertTrue(search.searchField.waitForExistence(timeout: 15))
+            search.searchAndSubmit(for: "swift")
+            XCTAssertTrue(search.row(for: "apple/swift").waitForExistence(timeout: 15))
+            // Same loop as the default-size banner test: the first completed
+            // search for a query succeeds and every later one fails, but which
+            // debounce emission completes first is not something a test
+            // controls, so re-submit until the banner is actually up.
+            for _ in 1...3 where !search.errorView.exists {
+                search.submitAgain()
+                _ = search.errorView.waitForExistence(timeout: 6)
+            }
+            XCTAssertTrue(search.errorView.exists)
+            XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 10))
+        }
+
+        try Then("the banner reflows instead of clipping, and nothing else regresses") {
+            try app.performAccessibilityAudit(Self.ignoringSearchFieldClearButton)
+        }
+    }
+
     // MARK: - Issue filters
     //
     // Each returns `true` to suppress an issue and `false` to let it fail the
@@ -144,8 +189,8 @@ final class AccessibilityAuditUITests: XCTestCase {
     /// alternatives are abandoning `.searchable` for a hand-rolled field or
     /// letting a permanently unfixable issue fail the suite.
     ///
-    /// The label is matched in English. All three tests in this class
-    /// therefore open with `skipUnlessRunningInEnglish(matching:)`: under the test
+    /// The label is matched in English. Every test in this class therefore
+    /// opens with `skipUnlessRunningInEnglish(matching:)`: under the test
     /// plan's German configuration the same button is "Text löschen", this
     /// filter stops matching, and the audit fails on an issue no app-side
     /// change can fix. Needing a translation table to keep a suppression
@@ -159,15 +204,29 @@ final class AccessibilityAuditUITests: XCTestCase {
     ///
     /// The audit's clipping check is a *static* heuristic: it measures an
     /// element at the current text size and predicts whether the same layout
-    /// would overflow at a larger one. `RepoRowView` answers that question at
-    /// runtime instead, with `ViewThatFits` — the stats row reflows from an
-    /// `HStack` to a `VStack` when it stops fitting — and the heuristic
-    /// cannot see a layout that has not been proposed yet. So it flags the
-    /// star count at default size for a clip that never happens.
+    /// would overflow at a larger one. `RepoRowView` and `ErrorBanner` both
+    /// answer that question at runtime instead, with `ViewThatFits` — the
+    /// stats row and the banner each reflow from an `HStack` to a `VStack`
+    /// when they stop fitting — and the heuristic cannot see a layout that has
+    /// not been proposed yet. So it flags the star count, and the banner's
+    /// message and button, at default size for clips that never happen.
     ///
-    /// Verified, not assumed: see
-    /// `testSearchResultsSurviveTheLargestDynamicTypeSize()`, which runs the
-    /// same audit at AX5 with this suppression removed, and passes.
+    /// Verified per layout, not assumed, and that is why there are two AX5
+    /// tests rather than one. Each runs the *same* audit at AX5 with
+    /// `.textClipped` back in play:
+    /// `testSearchResultsSurviveTheLargestDynamicTypeSize()` covers the
+    /// results list, and `testTheFailureBannerSurvivesTheLargestDynamicTypeSize()`
+    /// covers the banner over it. Those are the two reflowing layouts this
+    /// filter forgives, and neither is now suppressed on nothing but this
+    /// paragraph's say-so.
+    ///
+    /// What is *not* separately witnessed at AX5 is the Favorites screen,
+    /// audited with this filter by the first test in the class. Its rows are
+    /// `RepoRowView`, so the flagged element and the `ViewThatFits` that
+    /// rescues it are literally the same code the results list exercises —
+    /// but "the same view type" is an argument, not a measurement, and the
+    /// screen around it (an `EditButton`, a swipe-to-delete affordance) is
+    /// not. It is on the guide's known-edges list for that reason.
     @MainActor
     private static func ignoringKnownFalsePositives(_ issue: XCUIAccessibilityAuditIssue) -> Bool {
         ignoringSearchFieldClearButton(issue) || issue.auditType == .textClipped

@@ -270,9 +270,28 @@ struct SearchView: View {
         VStack(spacing: 0) {
             if case .failed(let message, _, _) = viewModel.state {
                 ErrorBanner(message: message) { viewModel.retry() }
+                    // Without a transition the banner *pops*: a bar simply
+                    // exists where a moment ago there was none, and the rows
+                    // above jump up by its height in one frame. Moving in from
+                    // the bottom edge is the direction it actually comes from,
+                    // and the cross-fade keeps the text from sliding in
+                    // already-legible over the list.
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
             }
             LastRefreshedFooter(viewModel: viewModel, isRefreshing: isRefreshing)
         }
+        // Keyed on *presence*, not on `state`. Keying on the whole enum would
+        // re-run this animation for every message change and for both edges of
+        // the retry's `isRefreshing` flip — animating a bar that is not going
+        // anywhere. `isShowingFailure` changes exactly when the banner is
+        // inserted or removed, which is exactly what has a transition.
+        .animation(.easeInOut(duration: 0.2), value: isShowingFailure)
+    }
+
+    /// Whether the banner is on screen at all: the presence of a failure,
+    /// independent of its message and of its refresh flag.
+    private var isShowingFailure: Bool {
+        if case .failed = viewModel.state { true } else { false }
     }
 }
 
@@ -286,23 +305,44 @@ private struct ErrorBanner: View {
     let retry: () -> Void
 
     var body: some View {
-        HStack(spacing: 12) {
-            Text(message)
-                .font(.footnote)
-                .accessibilityIdentifier("search.errorView")
-            Spacer(minLength: 0)
-            Button("Retry", action: retry)
-                .buttonStyle(.bordered)
-                // A `.bordered` button sized for footnote text lands around
-                // 34pt tall, under the 44pt minimum touch target — which the
-                // accessibility audit measures and
-                // `AccessibilityAuditUITests` now walks this screen to check.
-                // The banner is small; the way out of it should not be.
-                .frame(minHeight: 44)
-                .accessibilityIdentifier("search.retryButton")
+        // The same reflow lesson as `RepoRowView.stats`, in the place it bites
+        // hardest. Side by side, a sentence-long error message and a Retry
+        // button share one line; at accessibility Dynamic Type sizes the
+        // message wins the space and the button is squeezed toward its title's
+        // intrinsic width, so "Retry" truncates to "Ret…" — a control whose
+        // label no longer says what it does. `ViewThatFits` tries the row
+        // first and falls back to the stack, where each gets the full width.
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 12) { fragment }
+            VStack(alignment: .leading, spacing: 8) { fragment }
         }
         .padding(.horizontal)
         .padding(.vertical, 8)
+    }
+
+    /// Extracted so the two candidates differ only in their container — one
+    /// definition of what the banner contains.
+    ///
+    /// The `Spacer(minLength: 0)` is in here rather than in the `HStack`
+    /// alone, and it is harmless in the `VStack`: a vertical spacer with a
+    /// zero minimum takes no height it is not given, and the bar is sized by
+    /// its content either way.
+    @ViewBuilder
+    private var fragment: some View {
+        Text(message)
+            .font(.footnote)
+            .accessibilityIdentifier("search.errorView")
+        Spacer(minLength: 0)
+        Button("Retry", action: retry)
+            .buttonStyle(.bordered)
+            // A `.bordered` button sized for footnote text lands around
+            // 34pt tall, under the 44pt minimum touch target — which the
+            // accessibility audit measures and
+            // `AccessibilityAuditUITests` now walks this screen to check,
+            // at the largest accessibility size, in the banner state.
+            // The banner is small; the way out of it should not be.
+            .frame(minHeight: 44)
+            .accessibilityIdentifier("search.retryButton")
     }
 }
 
