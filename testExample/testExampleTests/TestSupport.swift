@@ -49,6 +49,13 @@ actor ScriptedGitHubClient: GitHubClient {
     }
 
     func searchRepositories(matching query: String) async throws -> [Repo] {
+        // Parity with the gated doubles below, which all check the flag before
+        // handing anything back. A real client does not answer an
+        // already-cancelled task just because its answer was ready — and a
+        // double that did would let a view model's cancellation handling pass
+        // a test it should fail. It also stops a superseded call from silently
+        // eating a script entry the test is counting on for the next search.
+        try Task.checkCancellation()
         queries.append(query)
         let next = script.isEmpty ? fallback : script.removeFirst()
         return try next.get()
@@ -208,9 +215,26 @@ actor KeyedGatedGitHubClient: GitHubClient {
     /// through must open the key N times *after* each one has suspended.
     private var preOpened: Set<String> = []
     private let repos: [String: [Repo]]
+    /// Per-query outcome scripts, consumed one entry per call that gets past
+    /// the gate.
+    ///
+    /// Gating and scripting have to be the same double for one scenario: the
+    /// stale-results promotion is only observable *while a retry of the same
+    /// query is in flight*, which needs a query that first succeeds, then
+    /// fails, then suspends on demand. `ScriptedGitHubClient` can sequence
+    /// outcomes but not suspend; the gate could suspend but only ever
+    /// succeed.
+    private var scripts: [String: [Result<[Repo], GitHubClientError>]]
 
-    init(repos: [String: [Repo]]) {
+    /// - Parameters:
+    ///   - repos: the answer for a query with no script entry left.
+    ///   - scripts: per-query outcomes, in order, consumed one per call.
+    init(
+        repos: [String: [Repo]] = [:],
+        scripts: [String: [Result<[Repo], GitHubClientError>]] = [:]
+    ) {
         self.repos = repos
+        self.scripts = scripts
     }
 
     func searchRepositories(matching query: String) async throws -> [Repo] {
@@ -235,6 +259,12 @@ actor KeyedGatedGitHubClient: GitHubClient {
         // because the response happened to be ready; a double that did would
         // let a view model's cancellation handling pass a test it should fail.
         try Task.checkCancellation()
+
+        if var remaining = scripts[query], !remaining.isEmpty {
+            let next = remaining.removeFirst()
+            scripts[query] = remaining
+            return try next.get()
+        }
         return repos[query] ?? []
     }
 
@@ -341,26 +371,88 @@ final class StubURLProtocol: URLProtocol {
 actor StubHandlerGate {
     static let shared = StubHandlerGate()
 
-    private var held = false
-    private var waiters: [CheckedContinuation<Void, Never>] = []
+    /// True for the duration of a `withStubbedClient` body, and inherited by
+    /// anything that body awaits.
+    ///
+    /// A non-reentrant lock plus a nested acquire is a deadlock, and a
+    /// deadlock in a test suite is the worst failure mode available: no
+    /// message, no failing assertion, just a run that never ends and a CI job
+    /// killed by its own timeout an hour later. A task-local carries the fact
+    /// "this task already owns the gate" down into nested calls, so a
+    /// `withStubbedClient` inside a `withStubbedClient` fails *at the second
+    /// call*, naming itself.
+    @TaskLocal static var isHolding = false
 
-    func acquire() async {
-        guard held else {
-            held = true
-            return
-        }
-        await withCheckedContinuation { waiters.append($0) }
-        // Resumed by `release()`, which hands ownership straight over rather
-        // than clearing `held` — so a waiter cannot be barged by a caller
-        // that arrives while it is waking up.
+    /// How long a caller waits before deciding the gate is never coming.
+    /// Generous — the longest legitimate hold is one stubbed request — and
+    /// finite, which is the point.
+    static let acquireTimeout: Duration = .seconds(30)
+
+    private struct Waiter {
+        let ticket: UUID
+        let continuation: CheckedContinuation<Bool, Never>
     }
 
+    private var held = false
+    private var waiters: [Waiter] = []
+
+    /// - Returns: `true` if this caller now owns the gate and must release it,
+    ///   `false` if it gave up waiting (having recorded an issue). A caller
+    ///   that gets `false` must **not** release: the gate belongs to someone
+    ///   else, and releasing would hand it to a third party.
+    func acquire() async -> Bool {
+        precondition(
+            !Self.isHolding,
+            "StubHandlerGate.acquire() re-entered from inside a withStubbedClient body; "
+                + "this gate is not reentrant and waiting on it here would deadlock."
+        )
+        guard held else {
+            held = true
+            return true
+        }
+
+        let ticket = UUID()
+        // The deadline lives outside the continuation because a
+        // `CheckedContinuation` cannot be raced against a timer directly —
+        // whoever resumes it first wins, so the timer's job is to *be* one of
+        // the resumers.
+        let deadline = Task {
+            try? await Task.sleep(for: Self.acquireTimeout)
+            await self.expire(ticket)
+        }
+        let acquired = await withCheckedContinuation { continuation in
+            waiters.append(Waiter(ticket: ticket, continuation: continuation))
+        }
+        deadline.cancel()
+
+        if !acquired {
+            Issue.record(
+                """
+                Timed out after \(Self.acquireTimeout) waiting for StubHandlerGate. \
+                Some other test is holding the process-wide \
+                StubURLProtocol.handler slot and never released it.
+                """
+            )
+        }
+        return acquired
+    }
+
+    /// Hands ownership straight to the next waiter rather than clearing
+    /// `held`, so a waiter cannot be barged by a caller that arrives while it
+    /// is waking up.
     func release() {
         if waiters.isEmpty {
             held = false
         } else {
-            waiters.removeFirst().resume()
+            waiters.removeFirst().continuation.resume(returning: true)
         }
+    }
+
+    /// Wakes one waiter empty-handed. Ownership is untouched: the holder still
+    /// holds it, and the next `release()` still goes to whoever is left.
+    private func expire(_ ticket: UUID) {
+        guard let index = waiters.firstIndex(where: { $0.ticket == ticket }) else { return }
+        waiters.remove(at: index).continuation.resume(returning: false)
     }
 }
 
@@ -380,7 +472,7 @@ func withStubbedClient<T>(
     handler: @escaping StubURLProtocol.Handler,
     client body: (LiveGitHubClient) async throws -> T
 ) async throws -> T {
-    await StubHandlerGate.shared.acquire()
+    let owned = await StubHandlerGate.shared.acquire()
 
     let configuration = URLSessionConfiguration.ephemeral
     configuration.protocolClasses = [StubURLProtocol.self]
@@ -390,16 +482,27 @@ func withStubbedClient<T>(
     // Captured rather than rethrown immediately: releasing the gate is an
     // `await`, and `defer` bodies cannot suspend. Funnelling both outcomes
     // through one `Result` keeps the teardown on exactly one path.
+    //
+    // The body runs inside the task-local that marks this task as the holder,
+    // so a nested `withStubbedClient` trips the precondition in `acquire()`
+    // instead of waiting for a gate its own caller is holding.
     let outcome: Result<T, any Error>
     do {
-        outcome = .success(try await body(LiveGitHubClient(session: session)))
+        let value = try await StubHandlerGate.$isHolding.withValue(true) {
+            try await body(LiveGitHubClient(session: session))
+        }
+        outcome = .success(value)
     } catch {
         outcome = .failure(error)
     }
 
     StubURLProtocol.handler = nil
     session.finishTasksAndInvalidate()
-    await StubHandlerGate.shared.release()
+    // Only if we actually got it. Releasing a gate we never acquired would
+    // hand the real holder's exclusivity to a third caller.
+    if owned {
+        await StubHandlerGate.shared.release()
+    }
 
     return try outcome.get()
 }

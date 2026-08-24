@@ -35,11 +35,16 @@ struct LiveGitHubClientTests {
 /// transport failures and decoding — via `StubURLProtocol` (see
 /// `TestSupport.swift`) instead of hitting the real GitHub API.
 ///
-/// `.serialized` because every test in this suite sets the same
-/// `StubURLProtocol.handler`. Note that serialization is about *tests* not
-/// overlapping; it is not what makes the handler itself thread-safe — see the
-/// `Mutex` in `StubURLProtocol` for that, and why the old comment here was
-/// wrong about it.
+/// `.serialized` is **not** load-bearing here, and saying so is the point.
+/// Every test in this suite sets the same `StubURLProtocol.handler`, but what
+/// keeps them from overwriting each other is `StubHandlerGate`, which is
+/// process-wide and therefore also covers the case a `.serialized` trait
+/// cannot: another *suite*, running concurrently, reaching for a stubbed
+/// client. Serialization only orders tests within this suite. It is kept for
+/// the ordinary reasons — one stubbed request at a time makes failures easier
+/// to read, and un-serialized tests would simply queue on the gate anyway —
+/// not because correctness rests on it. (Neither mechanism is what makes the
+/// handler *slot* thread-safe; see the `Mutex` in `StubURLProtocol`.)
 @Suite("LiveGitHubClient error mapping", .serialized)
 struct LiveGitHubClientErrorMappingTests {
 

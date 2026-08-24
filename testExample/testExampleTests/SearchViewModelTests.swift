@@ -126,35 +126,158 @@ struct SearchViewModelTests {
         ))
     }
 
-    @Test("retrying from the failure banner keeps the stale results, even through a second failure")
+    @Test("retrying the query the stale rows answer keeps them on screen throughout")
     func retryFromFailureBannerPreservesStaleResults() async throws {
-        // The banner's Retry re-enters `search` with state `.failed(_, stale:)`.
-        // The stale-while-revalidate promotion must read that shape too:
-        // reading only `.loaded` would blank the results the banner promised
-        // to preserve, and a second failure would then drop them permanently.
-        let client = ScriptedGitHubClient(
-            script: [.success(.fixture), .failure(.rateLimited), .failure(.network)]
-        )
+        // The banner's Retry re-enters `search` with state `.failed(_, stale:)`,
+        // and the promotion has to read that shape too: reading only `.loaded`
+        // would blank the results the banner promised to preserve, and a second
+        // failure would then drop them permanently.
+        //
+        // The *middle* of the retry is the part worth pinning, and it is
+        // invisible to a test that only inspects terminal states — which is
+        // what the previous version of this test did. Gating the client is
+        // what makes the in-flight moment observable: while the retry is
+        // suspended, the rows must be back on screen and flagged refreshing,
+        // not replaced by a spinner.
+        let client = KeyedGatedGitHubClient(scripts: [
+            "swift": [.success(.fixture), .failure(.rateLimited), .failure(.network)]
+        ])
         let viewModel = SearchViewModel(client: client, debounceInterval: Self.neverFires)
 
+        await client.open("swift")
         await viewModel.dispatch("swift").value
-        await viewModel.dispatch("swiftui").value
-        guard case .failed(_, .some) = viewModel.state else {
-            Issue.record("Expected a failure carrying stale results, got \(viewModel.state)")
-            return
-        }
+        #expect(viewModel.state == .loaded(.fixture, isRefreshing: false))
+        #expect(viewModel.lastCompletedQuery == "swift")
 
-        // The user taps Retry in the banner. `retry()` delegates to
-        // `dispatch(searchText)`; calling `dispatch` directly is the same
-        // funnel with an awaitable task, minus the field bookkeeping this
-        // test never set up. The second failure must still carry the
-        // original results forward.
-        await viewModel.dispatch("swiftui").value
+        // A refresh of that same query fails. The rows it was refreshing stay,
+        // under a banner.
+        await client.open("swift")
+        await viewModel.dispatch("swift").value
+        #expect(viewModel.state == .failed(
+            message: GitHubClientError.rateLimited.errorDescription ?? "",
+            stale: .fixture
+        ))
 
+        // The user taps Retry. `retry()` delegates to `dispatch(searchText)`;
+        // dispatching directly is the same funnel with an awaitable task,
+        // minus the field bookkeeping this test never set up.
+        let retry = viewModel.dispatch("swift")
+        try await poll(until: { await client.isPending("swift") }, message: "the retry to be in flight")
+        #expect(viewModel.state == .loaded(.fixture, isRefreshing: true))
+
+        // And a second failure still carries the same results forward.
+        await client.open("swift")
+        await retry.value
         #expect(viewModel.state == .failed(
             message: GitHubClientError.network.errorDescription ?? "",
             stale: .fixture
         ))
+    }
+
+    @Test("a new query typed from a failure does not resurrect the old query's rows")
+    func newQueryFromAFailureStartsBlank() async throws {
+        // The promotion is for *retrying the query the stale rows answer*.
+        // Ungated, it fired for any query dispatched from a failure — so
+        // typing something new showed the previous search's results as the new
+        // query's own, with a spinner claiming they were being refreshed. A
+        // query with no history has nothing to keep, and a blank screen is the
+        // correct answer for it.
+        let staleResult: [Repo] = [
+            Repo(id: 2, fullName: "stale/repo", ownerLogin: "stale", summary: nil,
+                 stargazersCount: 0, forksCount: 0, language: nil,
+                 htmlURL: URL(string: "https://github.com/stale/repo")!)
+        ]
+        let client = KeyedGatedGitHubClient(scripts: [
+            "swift": [.success(staleResult), .failure(.rateLimited)],
+            "swiftui": [.failure(.network)],
+        ])
+        let viewModel = SearchViewModel(client: client, debounceInterval: Self.neverFires)
+
+        await client.open("swift")
+        await viewModel.dispatch("swift").value
+        await client.open("swift")
+        await viewModel.dispatch("swift").value
+        #expect(viewModel.state == .failed(
+            message: GitHubClientError.rateLimited.errorDescription ?? "",
+            stale: staleResult
+        ))
+
+        let fresh = viewModel.dispatch("swiftui")
+        try await poll(until: { await client.isPending("swiftui") }, message: "the new query to be in flight")
+        #expect(viewModel.state == .loading)
+
+        await client.open("swiftui")
+        await fresh.value
+        // Nothing to keep, so nothing is kept: the new query's failure is a
+        // first-load failure, and gets the full-screen presentation.
+        #expect(viewModel.state == .failed(
+            message: GitHubClientError.network.errorDescription ?? "",
+            stale: nil
+        ))
+    }
+
+    @Test("a failure that kept no rows blanks to loading on retry")
+    func retryFromAFailureWithEmptyStaleResultsBlanksToLoading() async throws {
+        // The other guard on the promotion. A search can succeed with zero
+        // results and then fail on refresh, which leaves `.failed(_, stale: [])`
+        // — a failure whose "preserved results" are an empty array. Promoting
+        // that puts a zero-row list and a refresh spinner on screen in place of
+        // the message the user needs.
+        let client = KeyedGatedGitHubClient(scripts: [
+            "zzzz": [.success([]), .failure(.rateLimited), .success(.fixture)]
+        ])
+        let viewModel = SearchViewModel(client: client, debounceInterval: Self.neverFires)
+
+        await client.open("zzzz")
+        await viewModel.dispatch("zzzz").value
+        #expect(viewModel.state == .loaded([], isRefreshing: false))
+
+        await client.open("zzzz")
+        await viewModel.dispatch("zzzz").value
+        #expect(viewModel.state == .failed(
+            message: GitHubClientError.rateLimited.errorDescription ?? "",
+            stale: []
+        ))
+
+        let retry = viewModel.dispatch("zzzz")
+        try await poll(until: { await client.isPending("zzzz") }, message: "the retry to be in flight")
+        #expect(viewModel.state == .loading)
+
+        await client.open("zzzz")
+        await retry.value
+        #expect(viewModel.state == .loaded(.fixture, isRefreshing: false))
+    }
+
+    @Test("a cancelled blank search cannot release a live search's dedup key")
+    func cancelledBlankSearchLeavesTheLiveKeyAlone() async throws {
+        // The interleaving, which is one main-actor turn:
+        //
+        //   dispatch("")      → key = "",      task A created (not yet running)
+        //   dispatch("swift") → key = "swift", task A cancelled, task B created
+        //   … turn ends, A runs, then B runs …
+        //
+        // Task A is cancelled before its body has executed a single line. With
+        // the cancellation guard *below* the blank-query guard, A ran the blank
+        // path anyway and set `lastDispatchedQuery = nil` — releasing the key
+        // that B, still in flight, had just claimed. The user then retyped the
+        // same text and paid for a duplicate round trip, because the `filter`
+        // in `init` had nothing left to compare against.
+        let spy = SpyGitHubClient(result: .success(.fixture))
+        let viewModel = SearchViewModel(client: spy, debounceInterval: .milliseconds(50))
+
+        let blank = viewModel.dispatch("")
+        let live = viewModel.dispatch("swift")
+        await blank.value
+        await live.value
+
+        #expect(viewModel.state == .loaded(.fixture, isRefreshing: false))
+
+        // `lastDispatchedQuery` is private, so the key is asserted the way the
+        // user experiences it: re-submitting the identical text after a
+        // *success* must not reach the client again.
+        viewModel.searchText = "swift"
+        try await Task.sleep(for: .milliseconds(300))
+        #expect(await spy.queries == ["swift"])
     }
 
     @Test("a first-load failure has nothing to keep")
@@ -308,26 +431,32 @@ struct SearchViewModelTests {
         #expect(viewModel.now == stoppedNow)
     }
 
-    @Test("startTicker() twice leaks no second subscription")
-    func doubleStartTickerIsANoOp() async throws {
-        // `stopTicker()` releases *one* cancellable. If a second
-        // `startTicker()` had overwritten it with a second subscription, the
-        // first would still be running and `now` would keep advancing after
-        // the single stop below — which is precisely the leak the guard in
-        // `startTicker()` prevents.
+    @Test("startTicker() while already ticking does nothing at all")
+    func doubleStartTickerIsANoOp() {
+        // What the guard in `startTicker()` protects, precisely.
+        //
+        // It is *not* a leaked subscription, and the previous version of this
+        // test could not have failed: `tickerCancellable` is an
+        // `AnyCancellable`, and assigning a second one over it releases the
+        // first, whose `deinit` cancels it. Even with the guard deleted there
+        // is only ever one live timer, so "stop once and watch `now` keep
+        // advancing" describes something that cannot happen.
+        //
+        // What the guard actually prevents is the *re-seed*: the second call
+        // would rewrite `now` and restart the timer's phase, so a view that
+        // sends `.onAppear` twice (a tab switched away and back inside one
+        // second, a re-parented view) would move the clock the footer reads
+        // for no reason. Asserting on the seed is fast, deterministic, and
+        // fails the moment the guard goes.
         let spy = SpyGitHubClient(result: .success(.fixture))
         let viewModel = SearchViewModel(client: spy)
 
         viewModel.startTicker()
+        let seeded = viewModel.now
         viewModel.startTicker()
 
-        let seeded = viewModel.now
-        try await poll(until: { viewModel.now != seeded }, timeout: .seconds(4), message: "the ticker to advance")
-
+        #expect(viewModel.now == seeded)
         viewModel.stopTicker()
-        let stopped = viewModel.now
-        try await Task.sleep(for: .milliseconds(1_500))
-        #expect(viewModel.now == stopped)
     }
 
     @Test("stopTicker() on a view model that never started is harmless")
@@ -505,12 +634,18 @@ struct SearchViewModelTests {
         #expect(await spy.queries == ["swift", "swift"])
     }
 
-    @Test("a trailing space is not a new query")
+    @Test("a trailing space is not a new query, in either direction")
     func trailingWhitespaceDoesNotRefire() async throws {
         // The dedup key and the request it stands for must be the same
         // string. Keying on the raw field text let "swift " past a key of
         // "swift" and fired a second, identical request — the user added a
         // space and paid for a whole round trip.
+        //
+        // Both directions, because they pin *different* trims and a test that
+        // only walks one of them passes with the other deleted. Padding after
+        // a bare query exercises the `filter`'s trim of the candidate; the
+        // reverse — a padded query first, then the bare one — exercises
+        // `dispatch(_:)`'s trim of the key it stores.
         let spy = SpyGitHubClient(result: .success(.fixture))
         let viewModel = SearchViewModel(client: spy, debounceInterval: .milliseconds(50))
 
@@ -518,6 +653,26 @@ struct SearchViewModelTests {
         try await poll(until: { viewModel.state == .loaded(.fixture, isRefreshing: false) }, message: "first load")
 
         viewModel.searchText = "swift "
+        try await Task.sleep(for: .milliseconds(300))
+        #expect(await spy.queries == ["swift"])
+    }
+
+    @Test("a query typed with padding first is not re-fired once the padding goes")
+    func leadingPaddedQueryDoesNotRefireWhenTrimmed() async throws {
+        // The direction the test above cannot cover. The key recorded for
+        // "swift " has to be the trimmed "swift", or removing the space reads
+        // as a different query and re-runs a search whose results are already
+        // on screen. Note what the client receives, too: `search(matching:)`
+        // sends the trimmed text, so the request and the key describe the same
+        // string end to end.
+        let spy = SpyGitHubClient(result: .success(.fixture))
+        let viewModel = SearchViewModel(client: spy, debounceInterval: .milliseconds(50))
+
+        viewModel.searchText = "swift "
+        try await poll(until: { viewModel.state == .loaded(.fixture, isRefreshing: false) }, message: "first load")
+        #expect(await spy.queries == ["swift"])
+
+        viewModel.searchText = "swift"
         try await Task.sleep(for: .milliseconds(300))
         #expect(await spy.queries == ["swift"])
     }
