@@ -10,8 +10,21 @@ struct FavoritesView: View {
     private var favorites: [FavoriteRepo]
 
     @Environment(\.modelContext) private var modelContext
-    /// Written when the last row goes away; see `.onChange` below.
-    @Environment(\.editMode) private var editMode
+
+    /// This screen **owns** its edit mode instead of reading the one the
+    /// navigation container supplies, and that is the only version of this
+    /// that works.
+    ///
+    /// Measured, not assumed. `@Environment(\.editMode)` yields a binding that
+    /// accepts a write and reads the written value straight back — and the
+    /// toolbar's `EditButton` goes on saying "Done" regardless, because the
+    /// state it renders from is not the one that binding addresses. Tried from
+    /// this view and again from a child inside the `NavigationStack`, on the
+    /// theory that the container provides the value only to its content;
+    /// identical result, both times. Supplying the binding below instead makes
+    /// the button, the list's rows and the reset in `.onChange` share one
+    /// source of truth — which is what `FavoritesFlowUITests` now pins.
+    @State private var editMode: EditMode = .inactive
 
     var body: some View {
         NavigationStack {
@@ -69,8 +82,13 @@ struct FavoritesView: View {
             // out. Closing the loop where it opens: the same emptiness that
             // removes the button turns the mode off.
             .onChange(of: favorites.isEmpty) {
-                if $1 { editMode?.wrappedValue = .inactive }
+                if $1 { editMode = .inactive }
             }
+            // Outermost, so it wraps the `.toolbar` above. Toolbar content
+            // reads the environment of the view its modifier is attached to,
+            // so an `.environment` applied below the toolbar would leave the
+            // button reading a different edit mode than the list does.
+            .environment(\.editMode, $editMode)
         }
     }
 
@@ -79,6 +97,7 @@ struct FavoritesView: View {
         // deleted row would emit a change notification per row — and `@Query`
         // would rebuild this list that many times — for what is, to the user,
         // a single action.
+        //
         // `compactMap` over the indices rather than `map` over the offsets:
         // an `IndexSet` is just numbers, and nothing in its type ties it to
         // the array it came from. Subscripting blind traps on an offset that

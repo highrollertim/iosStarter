@@ -86,5 +86,37 @@ final class FavoritesFlowUITests: XCTestCase {
             // used to cut rather than animate.
             XCTAssertTrue(favorites.list.exists)
         }
+
+        When("I favorite something again") {
+            // Each tab keeps its own navigation state, and this one was left
+            // on apple/swift's detail screen in the `Given` — favoriting from
+            // there is what put the row in Favorites, and nothing has popped
+            // it since. So the Search tab comes back to the detail screen, not
+            // to the results list.
+            app.tabBars.buttons["tab.search"].tap()
+            XCTAssertTrue(detail.favoriteButton.waitForExistence(timeout: 5))
+            detail.toggleFavorite()
+            favorites.open()
+            XCTAssertTrue(favorites.row(for: "apple/swift").waitForExistence(timeout: 5))
+        }
+
+        Then("the list is not still in edit mode from the delete") {
+            // Deleting the last row hides the `EditButton` — the toolbar only
+            // shows it when there is something to edit — and hiding the only
+            // control that can leave edit mode does not leave it. Without the
+            // reset in `FavoritesView`, the row above arrives into a list
+            // still in edit mode and the restored button reads "Done".
+            //
+            // Asserted on the label because that is what the two modes differ
+            // by: `EditButton` is "Edit" when inactive and "Done" when active.
+            // This failed against the first two attempts at the fix — both of
+            // which wrote `@Environment(\.editMode)` and looked correct — so
+            // it is the assertion that decided the shape of `FavoritesView`.
+            XCTAssertTrue(
+                favorites.editButton.waitForExistence(timeout: 5),
+                "nav bar buttons: \(app.navigationBars.buttons.allElementsBoundByIndex.map(\.label))"
+            )
+            XCTAssertFalse(app.navigationBars.buttons["Done"].exists)
+        }
     }
 }
