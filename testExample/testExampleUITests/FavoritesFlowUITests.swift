@@ -93,7 +93,7 @@ final class FavoritesFlowUITests: XCTestCase {
             // there is what put the row in Favorites, and nothing has popped
             // it since. So the Search tab comes back to the detail screen, not
             // to the results list.
-            app.tabBars.buttons["tab.search"].tap()
+            search.open()
             XCTAssertTrue(detail.favoriteButton.waitForExistence(timeout: 5))
             detail.toggleFavorite()
             favorites.open()

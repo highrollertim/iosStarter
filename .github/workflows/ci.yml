@@ -15,15 +15,29 @@ on:
     branches: [main]
   pull_request:
 
+# `DEVELOPER_DIR` is set once per job rather than shelling out to
+# `xcode-select` in each. `sudo xcode-select -s` mutates the runner
+# system-wide; the environment variable is scoped to the job, needs no `sudo`,
+# and is the mechanism Apple documents for picking a toolchain per invocation.
+# Three copies of a `sudo` also meant three places to forget when the image's
+# Xcode version moves.
 jobs:
   unit-tests:
     name: Unit tests (English + German)
     runs-on: macos-26
     timeout-minutes: 20
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.2.app/Contents/Developer
     steps:
       - uses: actions/checkout@v4
-      - name: Select Xcode 26.2
-        run: sudo xcode-select -s /Applications/Xcode_26.2.app
+      # The first thing to go wrong on a runner image update is the Xcode path
+      # above, and the failure it produces ("xcodebuild: command not found",
+      # or a build against the wrong SDK) says nothing about the cause. Two
+      # lines of output turn that into a diagnosis.
+      - name: Show the available toolchains
+        run: |
+          ls -d /Applications/Xcode*.app
+          xcodebuild -version
       - name: Test
         working-directory: testExample
         run: |
@@ -31,20 +45,34 @@ jobs:
             -project testExample.xcodeproj \
             -scheme testExample \
             -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \
+            -resultBundlePath UnitTests.xcresult \
             -only-testing:testExampleTests
+      # The coverage numbers the guide quotes come from this command. Printing
+      # them on every run is what stops a documented percentage from quietly
+      # becoming a historical one.
+      - name: Coverage by target
+        if: always()
+        working-directory: testExample
+        run: xcrun xccov view --report --only-targets UnitTests.xcresult
 
   ui-tests:
     name: UI tests (English + German)
     runs-on: macos-26
     # Not `continue-on-error`: a UI suite whose failures are advisory stops
     # being a suite. The timeout is the safety valve instead — the suite takes
-    # roughly eleven minutes across both configurations, so thirty is a hang,
-    # not a slow day.
+    # roughly twelve minutes across both configurations on a local machine, so
+    # thirty is a hang, not a slow day. (The same hedged figure is in the
+    # README and in the guide's §2; if one of the three ever moves, move all
+    # three.)
     timeout-minutes: 30
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.2.app/Contents/Developer
     steps:
       - uses: actions/checkout@v4
-      - name: Select Xcode 26.2
-        run: sudo xcode-select -s /Applications/Xcode_26.2.app
+      - name: Show the available toolchains
+        run: |
+          ls -d /Applications/Xcode*.app
+          xcodebuild -version
       # `SearchScreen.search(for:)` waits on the software keyboard, which
       # never appears while the simulator is paired with a hardware one.
       - name: Disconnect the simulator's hardware keyboard
@@ -58,6 +86,15 @@ jobs:
             -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \
             -resultBundlePath UITests.xcresult \
             -only-testing:testExampleUITests
+      # An `.xcresult` is a *bundle* — a directory Finder and Xcode present as
+      # one file — and `upload-artifact` uploads the files inside a directory,
+      # not the directory itself. Uploading the path directly therefore
+      # produced an artifact whose contents were the bundle's innards with the
+      # `.xcresult` wrapper stripped off, which `xcrun xcresulttool` cannot
+      # open. Tarring first preserves the wrapper.
+      - name: Archive the result bundle
+        if: always()
+        run: tar -czf UITests.xcresult.tgz -C testExample UITests.xcresult
       # A UI failure on a runner is otherwise a log line and nothing else: the
       # screenshots, the accessibility snapshots and the automatic
       # `XCTAttachment`s all live inside the result bundle. `if: always()` is
@@ -67,23 +104,32 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ui-tests-xcresult
-          path: testExample/UITests.xcresult
+          path: UITests.xcresult.tgz
           retention-days: 7
 
   lint:
     name: swift-format (advisory)
     runs-on: macos-26
     timeout-minutes: 10
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.2.app/Contents/Developer
     steps:
       - uses: actions/checkout@v4
-      - name: Select Xcode 26.2
-        run: sudo xcode-select -s /Applications/Xcode_26.2.app
+      - name: Show the available toolchains
+        run: |
+          ls -d /Applications/Xcode*.app
+          xcodebuild -version
       # Advisory on purpose, and the `|| true` is the whole design. The
       # repository's `.swift-format` is stricter than its prose — long comment
       # paragraphs are load-bearing teaching material here, and the line-length
       # rule does not know that. So the diagnostics are printed where a reviewer
       # can read them and are never allowed to fail the build. Drop the
       # `|| true` the day the codebase is clean and the rule earns a veto.
+      #
+      # No `--strict`: that flag only promotes warnings to a non-zero exit
+      # status, which `|| true` immediately throws away again. Two flags
+      # cancelling each other out read as a policy nobody quite settled, and
+      # the documented measurement in the README runs this exact line.
       - name: Lint
         run: |
-          xcrun swift-format lint --strict --recursive testExample || true
+          xcrun swift-format lint --recursive testExample || true

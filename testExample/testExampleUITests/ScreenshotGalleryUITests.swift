@@ -21,7 +21,7 @@ import XCTest
 ///
 /// So both methods gate on the configuration — but *not* through
 /// `skipUnlessRunningInEnglish(matching:)`, whose message says the test
-/// matches a string Apple localizes. That is true of the four tests that use
+/// matches a string Apple localizes. That is true of the six tests that use
 /// it and false of these two, and a skip reason that misdescribes itself is
 /// worse than no skip reason. They share the language check
 /// (`currentTestLanguage`) and supply their own sentence.

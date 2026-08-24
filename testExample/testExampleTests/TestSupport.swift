@@ -49,8 +49,9 @@ actor ScriptedGitHubClient: GitHubClient {
     }
 
     func searchRepositories(matching query: String) async throws -> [Repo] {
-        // Parity with the gated doubles below, which all check the flag before
-        // handing anything back. A real client does not answer an
+        // Parity with the gated doubles below that honour cancellation — which
+        // is all of them except `UncancellableGatedGitHubClient`, whose entire
+        // purpose is to *not* check the flag. A real client does not answer an
         // already-cancelled task just because its answer was ready — and a
         // double that did would let a view model's cancellation handling pass
         // a test it should fail. It also stops a superseded call from silently
@@ -417,7 +418,15 @@ actor StubHandlerGate {
         // whoever resumes it first wins, so the timer's job is to *be* one of
         // the resumers.
         let deadline = Task {
-            try? await Task.sleep(for: Self.acquireTimeout)
+            // `guard … != nil`, not a bare `try?`. A cancelled `Task.sleep`
+            // returns immediately, and `try?` swallows the error — so
+            // `deadline.cancel()` below used to *accelerate* the expiry it was
+            // meant to prevent: the sleep threw, the line was discarded, and
+            // `expire(ticket)` ran on the next line anyway. It was harmless
+            // only because `expire` finds no waiter once the continuation has
+            // been resumed. Checking the result is what makes cancellation
+            // actually skip the expiry rather than merely lose a race with it.
+            guard (try? await Task.sleep(for: Self.acquireTimeout)) != nil else { return }
             await self.expire(ticket)
         }
         let acquired = await withCheckedContinuation { continuation in
@@ -472,7 +481,14 @@ func withStubbedClient<T>(
     handler: @escaping StubURLProtocol.Handler,
     client body: (LiveGitHubClient) async throws -> T
 ) async throws -> T {
-    let owned = await StubHandlerGate.shared.acquire()
+    // Throwing here, before a single line of setup, is the point. The previous
+    // version carried on after a failed acquire and installed its handler
+    // anyway — into a slot the real holder was still using — so a gate timeout
+    // corrupted the *other* test's stubbing on its way to failing this one.
+    // A caller that does not own the gate must touch nothing.
+    guard await StubHandlerGate.shared.acquire() else {
+        throw StubHandlerGateTimeout()
+    }
 
     let configuration = URLSessionConfiguration.ephemeral
     configuration.protocolClasses = [StubURLProtocol.self]
@@ -498,13 +514,22 @@ func withStubbedClient<T>(
 
     StubURLProtocol.handler = nil
     session.finishTasksAndInvalidate()
-    // Only if we actually got it. Releasing a gate we never acquired would
-    // hand the real holder's exclusivity to a third caller.
-    if owned {
-        await StubHandlerGate.shared.release()
-    }
+    // Unconditional, and safe to be: the `guard` above means reaching this
+    // line is proof this call owns the gate.
+    await StubHandlerGate.shared.release()
 
     return try outcome.get()
+}
+
+/// Thrown by `withStubbedClient` when `StubHandlerGate.acquire()` gave up.
+///
+/// `acquire()` has already recorded the issue with the diagnostic detail; this
+/// exists so the caller *stops* rather than running a test whose stubbed
+/// responses would have belonged to somebody else.
+struct StubHandlerGateTimeout: Error, CustomStringConvertible {
+    var description: String {
+        "Gave up waiting for exclusive ownership of StubURLProtocol.handler; see the recorded issue."
+    }
 }
 
 extension [Repo] {

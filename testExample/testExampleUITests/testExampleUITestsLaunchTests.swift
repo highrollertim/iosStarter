@@ -6,11 +6,23 @@ import XCTest
 /// Two independent multipliers apply here, and they are worth telling apart —
 /// the result bundle is confusing until you do.
 ///
-/// `runsForEachTargetApplicationUIConfiguration` makes XCTest derive
-/// configurations from the *app*: the run is repeated across combinations of
-/// appearance, the app's supported localizations, and orientation. Measured,
-/// not assumed — the bundle labels them "Light Appearance, German, Portrait
-/// Upside Down" and the like, eight per run here.
+/// `runsForEachTargetApplicationUIConfiguration` makes XCTest repeat the run
+/// across combinations of appearance, the app's supported localizations, and
+/// orientation. Measured, not assumed — running just `testLaunch` with
+/// `-resultBundlePath` and reading the argument nodes back with
+/// `xcrun xcresulttool get test-results tests` gives eight per configuration,
+/// labelled "Light Appearance, English, Portrait", "Light Appearance, German,
+/// Portrait Upside Down", ", , Landscape Right" and the like.
+///
+/// Read the orientation half of those labels carefully, because it is the
+/// part that surprises. This app's Info.plist declares Portrait, Landscape
+/// Left and Landscape Right — **not** `UIInterfaceOrientationPortraitUpsideDown`
+/// — and the matrix names Portrait Upside Down anyway. The axis is derived
+/// from what the *device* can do, not from what the app says it supports, so a
+/// configuration can be labelled with an orientation the app will never
+/// actually rotate into: the app simply stays put and the screenshot is of the
+/// orientation it kept. Worth knowing before reading a bundle and concluding
+/// the app's supported-orientation list is wrong.
 ///
 /// The test plan's two *configurations* are a separate axis, and a stronger
 /// one: they relaunch the app under `de`/`DE` for real, which is what makes

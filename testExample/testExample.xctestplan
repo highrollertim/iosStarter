@@ -28,7 +28,8 @@
       ]
     },
     "defaultTestExecutionTimeAllowance" : 120,
-    "testTimeoutsEnabled" : true
+    "testTimeoutsEnabled" : true,
+    "userAttachmentLifetime" : "keepAlways"
   },
   "testTargets" : [
     {
