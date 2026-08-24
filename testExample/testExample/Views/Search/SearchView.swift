@@ -111,6 +111,13 @@ struct SearchView: View {
             // It re-runs the query these rows *belong to*, not the live field:
             // pulling mid-debounce would otherwise search half-typed text, and
             // pulling on a cleared field would collapse the list to idle.
+            //
+            // Unverified: whether the pull gesture is reachable at all with
+            // `.searchToolbarBehavior(.minimize)` on the same screen. Both
+            // claim the top overscroll — one to expand the search field, one
+            // to refresh — and which wins has not been measured here. The UI
+            // suite drives refreshes by re-submitting the query, not by
+            // pulling, so nothing in it would notice.
             .refreshable {
                 await viewModel.dispatch(viewModel.lastCompletedQuery ?? viewModel.searchText).value
             }
@@ -262,6 +269,12 @@ private struct ErrorBanner: View {
             Spacer(minLength: 0)
             Button("Retry", action: retry)
                 .buttonStyle(.bordered)
+                // A `.bordered` button sized for footnote text lands around
+                // 34pt tall, under the 44pt minimum touch target — which the
+                // accessibility audit measures and
+                // `AccessibilityAuditUITests` now walks this screen to check.
+                // The banner is small; the way out of it should not be.
+                .frame(minHeight: 44)
                 .accessibilityIdentifier("search.retryButton")
         }
         .padding(.horizontal)

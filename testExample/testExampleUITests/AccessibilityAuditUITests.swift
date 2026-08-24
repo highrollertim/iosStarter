@@ -63,6 +63,41 @@ final class AccessibilityAuditUITests: XCTestCase {
         }
     }
 
+    /// The screen the two audits above cannot reach: results with a failure
+    /// banner over them.
+    ///
+    /// It is worth its own launch because it is the only state that puts a
+    /// *control* in the safe-area bar. Everything else down there is ambient
+    /// status the footer hides from assistive technology; the banner is the
+    /// opposite — a message the user is meant to read and a button they are
+    /// meant to hit — so it is exactly the thing the audit's description and
+    /// hit-region checks exist for.
+    @MainActor
+    func testTheFailureBannerOverResultsPassesTheAccessibilityAudit() throws {
+        try skipUnlessRunningInEnglish(matching: "UISearchTextField's \"Clear text\" button")
+
+        let app = XCUIApplication.launchedForUITest(scenario: "searchSucceedsThenFails")
+        let search = SearchScreen(app: app)
+
+        Given("I am looking at results with a failure banner over them") {
+            XCTAssertTrue(search.searchField.waitForExistence(timeout: 5))
+            search.searchAndSubmit(for: "swift")
+            XCTAssertTrue(search.row(for: "apple/swift").waitForExistence(timeout: 10))
+            for _ in 1...3 where !search.errorView.exists {
+                search.submitAgain()
+                _ = search.errorView.waitForExistence(timeout: 6)
+            }
+            XCTAssertTrue(search.errorView.exists)
+            // Same reason as the test above: an on-screen keyboard fills the
+            // audit with system elements no app can fix.
+            XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 10))
+        }
+
+        try Then("the banner and the rows under it have no issues of our making") {
+            try app.performAccessibilityAudit(Self.ignoringKnownFalsePositives)
+        }
+    }
+
     /// The audit again, at the largest accessibility text size — and this time
     /// **without** suppressing `.textClipped`.
     ///

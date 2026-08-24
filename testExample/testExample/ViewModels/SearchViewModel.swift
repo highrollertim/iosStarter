@@ -172,9 +172,14 @@ final class SearchViewModel {
     ///   its own `Task` would be invisible to the cancellation on the next
     ///   line, and the "newest search wins" design rests on that cancellation.
     /// - **The dedup key always describes the search that is actually
-    ///   running.** Recording it here, before the work begins, is what stops
-    ///   a debounce emission already in flight from firing the same query a
-    ///   second time when it lands.
+    ///   running.** It is claimed here, before the work starts — which is what
+    ///   stops a debounce emission already in flight from firing the same
+    ///   query a second time when it lands — and released only by the failure
+    ///   (or the blank-query trip to idle) of the search that owns it. A
+    ///   superseded search releases nothing: it returns at one of
+    ///   `search(matching:)`'s cancellation guards, including the one above
+    ///   the blank-query path, which is the only place a cancelled task could
+    ///   ever reach a write.
     ///
     /// Returns the task so callers who need to wait — `.refreshable`, unit
     /// tests — can, without having to reach for `searchTask` themselves.

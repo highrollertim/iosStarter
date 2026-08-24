@@ -82,6 +82,13 @@ struct RepoDetailView: View {
                 .labelStyle(.iconOnly)
                 // Cross-fades star ↔ star.fill as one symbol changing state
                 // rather than one view being replaced by another.
+                //
+                // Unverified: that this actually renders as a symbol
+                // transition inside a toolbar item — rather than being
+                // dropped, as `contentTransition` silently is in some
+                // containers — has not been measured. A UI test cannot see it;
+                // it would take an eye on a device. The tests below cover the
+                // button's *state*, not its animation.
                 .contentTransition(.symbolEffect(.replace))
                 // Animating on the *value* rather than wrapping the call:
                 // `toggleFavorite()` writes to SwiftData, and `isFavorite`

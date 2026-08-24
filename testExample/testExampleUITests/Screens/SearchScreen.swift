@@ -54,6 +54,40 @@ struct SearchScreen {
     }
 
     func search(for query: String) {
+        focusField()
+        searchField.typeText(query)
+    }
+
+    /// Presses Return, which submits the query immediately (bypassing the
+    /// debounce — see `SearchViewModel.submitImmediately()`) and dismisses the
+    /// keyboard. Tests that need the results list unobscured use this.
+    func submit() {
+        searchField.typeText("\n")
+    }
+
+    /// Types the query and its Return in a single `typeText`.
+    ///
+    /// This narrows — it does not close — the window in which the debounce
+    /// fires a search of its own for the same text before the Return arrives.
+    /// Nothing here can close it: how fast the simulator types is not
+    /// something a test controls, which is why the scenarios that *count*
+    /// searches key their bookkeeping per query, and why the tests using them
+    /// are written to hold whichever way that race lands.
+    func searchAndSubmit(for query: String) {
+        focusField()
+        searchField.typeText(query + "\n")
+    }
+
+    /// Re-submits whatever is already in the field, re-focusing it first.
+    ///
+    /// A previous `submit()` dismissed the keyboard, and `typeText` on an
+    /// unfocused field goes nowhere.
+    func submitAgain() {
+        focusField()
+        submit()
+    }
+
+    private func focusField() {
         searchField.tap()
         // `tap()` returns once the event has been delivered, not once the
         // field has taken focus and the keyboard is up. Typing into a
@@ -69,14 +103,13 @@ struct SearchScreen {
             app.keyboards.firstMatch.waitForExistence(timeout: 15),
             "Software keyboard never appeared; check Simulator ▸ I/O ▸ Keyboard ▸ Connect Hardware Keyboard is off"
         )
-        searchField.typeText(query)
     }
 
-    /// Presses Return, which submits the query immediately (bypassing the
-    /// debounce — see `SearchViewModel.submitImmediately()`) and dismisses the
-    /// keyboard. Tests that need the results list unobscured use this.
-    func submit() {
-        searchField.typeText("\n")
+    /// The results list itself, which is one view across `.loaded` and
+    /// `.failed(_, stale:)` — the same element, updated, not two lists that
+    /// take turns.
+    var list: XCUIElement {
+        app.descendants(matching: .any)["search.list"].firstMatch
     }
 
     func row(for fullName: String) -> XCUIElement {

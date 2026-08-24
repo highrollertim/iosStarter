@@ -105,8 +105,78 @@ final class SearchFlowUITests: XCTestCase {
         }
 
         Then("the results appear") {
+            // Bounded retry rather than a single wait. `searchErrorOnce` fails
+            // the first *completed* call per query, and typing "swift"
+            // produces prefix queries too — a slow enough typist gets a prefix
+            // failure on screen, and the Retry the test taps re-runs that
+            // prefix rather than "swift", which then has its own first failure
+            // still to spend. Each further tap consumes one more, so a handful
+            // of attempts converges. The assertion after the loop is the real
+            // one; the loop only stops the test from depending on how fast the
+            // simulator types.
+            for _ in 1...3 where !search.row(for: "apple/swift").exists {
+                if search.retryButton.exists { search.retryButton.tap() }
+                _ = search.row(for: "apple/swift").waitForExistence(timeout: 10)
+            }
+            XCTAssertTrue(search.row(for: "apple/swift").exists)
+            XCTAssertFalse(search.errorView.exists)
+        }
+    }
+
+    @MainActor
+    func testAFailedRefreshKeepsTheResultsAndItsRetryKeepsThemToo() {
+        // The state no other UI test reaches: a failure *with results still on
+        // screen*. It is the whole reason `LoadState.failed` carries `stale`,
+        // and the reason the list is hoisted out of the state switch — one
+        // list identity across `.loaded` and `.failed(_, stale:)`, so the rows
+        // are updated rather than destroyed and rebuilt.
+        //
+        // `searchSucceedsThenFails` succeeds the first completed call for each
+        // query and fails every later one for that same query. So the first
+        // search populates the list, and every submission after it — including
+        // the one the Retry button makes — fails. That makes the terminal
+        // assertion a strong one rather than a lucky one: the banner comes
+        // back, and the rows are still underneath it.
+        let app = XCUIApplication.launchedForUITest(scenario: "searchSucceedsThenFails")
+        let search = SearchScreen(app: app)
+
+        Given("I have results on screen") {
+            XCTAssertTrue(search.searchField.waitForExistence(timeout: 5))
+            search.searchAndSubmit(for: "swift")
             XCTAssertTrue(search.row(for: "apple/swift").waitForExistence(timeout: 10))
             XCTAssertFalse(search.errorView.exists)
+        }
+
+        When("I re-run the same search until it fails") {
+            // Bounded, for the same reason as the retry loop above: the rows
+            // on screen may have come from a prefix query, and a submission
+            // that is cancelled before the mock's sleep returns never counts
+            // as a completed call. Each further submission adds one that does.
+            for _ in 1...3 where !search.errorView.exists {
+                search.submitAgain()
+                _ = search.errorView.waitForExistence(timeout: 6)
+            }
+        }
+
+        Then("the rows stay, under a banner offering a retry") {
+            XCTAssertTrue(search.errorView.waitForExistence(timeout: 10))
+            XCTAssertTrue(search.list.exists)
+            XCTAssertTrue(search.row(for: "apple/swift").exists)
+            XCTAssertTrue(search.retryButton.exists)
+        }
+
+        When("I tap Retry in the banner") {
+            search.retryButton.tap()
+        }
+
+        Then("the rows never left, and the second failure keeps them too") {
+            // Immediately: the retry promotes the stale rows back to a
+            // refreshing `.loaded`, so the list is still on screen with its
+            // rows while the request is in flight. When the failure lands, the
+            // banner returns over the same rows.
+            XCTAssertTrue(search.row(for: "apple/swift").exists)
+            XCTAssertTrue(search.errorView.waitForExistence(timeout: 10))
+            XCTAssertTrue(search.row(for: "apple/swift").exists)
         }
     }
 }
