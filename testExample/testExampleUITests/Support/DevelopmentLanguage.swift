@@ -37,7 +37,7 @@ func skipUnlessRunningInEnglish(
     file: StaticString = #filePath,
     line: UInt = #line
 ) throws {
-    let language = Locale.current.language.languageCode?.identifier
+    let language = currentTestLanguage
     try XCTSkipUnless(
         language == "en",
         """
@@ -47,4 +47,17 @@ func skipUnlessRunningInEnglish(
         file: file,
         line: line
     )
+}
+
+/// The language code of the test-plan configuration currently running, as the
+/// app and the runner both see it.
+///
+/// Factored out because there are now two *different* reasons to run
+/// English-only, and only one of them is the Apple-owned-string problem above.
+/// `ScreenshotGalleryUITests` gates on the same fact for a reason of its own —
+/// its captures are for an English README, and the German one sets its own
+/// language — so it needs the check without the message that comes with it.
+/// One place computes it; each caller says why it cares.
+var currentTestLanguage: String? {
+    Locale.current.language.languageCode?.identifier
 }

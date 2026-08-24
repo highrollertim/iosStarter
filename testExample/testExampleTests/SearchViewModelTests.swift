@@ -504,7 +504,11 @@ struct SearchViewModelTests {
         let seeded = viewModel.now
         // `Timer.publish(every: 1, ...)` ticks on wall-clock seconds, so give
         // it a few seconds of headroom rather than racing the first tick.
-        try await poll(until: { viewModel.now != seeded }, timeout: .seconds(4), message: "now to advance after the seed")
+        try await poll(
+            until: { viewModel.now != seeded },
+            timeout: .seconds(4),
+            message: "now to advance after the seed"
+        )
 
         viewModel.stopTicker()
         let stoppedNow = viewModel.now
@@ -593,7 +597,10 @@ struct SearchViewModelTests {
         viewModel.searchText = "sw"
         viewModel.searchText = "swift"
 
-        try await poll(until: { viewModel.state == .loaded(.fixture, isRefreshing: false) }, message: "state == .loaded")
+        try await poll(
+            until: { viewModel.state == .loaded(.fixture, isRefreshing: false) },
+            message: "state == .loaded"
+        )
         #expect(await spy.queries == ["swift"])
     }
 
@@ -627,7 +634,10 @@ struct SearchViewModelTests {
 
         viewModel.searchText = "swift"
         try await poll(
-            until: { viewModel.state == .failed(message: GitHubClientError.rateLimited.errorDescription ?? "", stale: nil) },
+            until: {
+                viewModel.state
+                    == .failed(message: GitHubClientError.rateLimited.errorDescription ?? "", stale: nil)
+            },
             message: "first attempt to fail"
         )
 

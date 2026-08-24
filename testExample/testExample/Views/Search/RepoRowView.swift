@@ -28,7 +28,14 @@ struct RepoRowView: View {
     /// for the system to substitute. `Deemphasized` names four measured
     /// values instead: light, dark, and a high-contrast variant of each, so
     /// a user who has asked for more contrast actually gets it.
-    private static let deemphasized = Color("Deemphasized")
+    ///
+    /// Spelled `Color(.deemphasized)`, not `Color("Deemphasized")`. The
+    /// asset catalog generates a symbol per colour
+    /// (`ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS`), so
+    /// this name is checked by the compiler; the string version resolves at
+    /// runtime and renders a silent, hard-to-notice black when the asset is
+    /// renamed or removed.
+    private static let deemphasized = Color(.deemphasized)
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {

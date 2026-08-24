@@ -3,6 +3,10 @@
 > listings herein predate later fix waves and **MUST NOT** be used as
 > reference — in particular the init-started ticker shown here was later
 > identified as a bug. Kept only as a record of how the app was planned.
+> The plan was also written *for an agentic executor*, so its tool-plumbing
+> instructions (the "REQUIRED SUB-SKILL" note below, the checkbox task
+> syntax) are part of the archived artifact rather than guidance to a human
+> reader of this repository.
 
 # RepoScout Reference App Implementation Plan
 

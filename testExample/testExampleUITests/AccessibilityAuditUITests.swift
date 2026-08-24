@@ -144,8 +144,8 @@ final class AccessibilityAuditUITests: XCTestCase {
     /// alternatives are abandoning `.searchable` for a hand-rolled field or
     /// letting a permanently unfixable issue fail the suite.
     ///
-    /// The label is matched in English. Both tests in this class therefore
-    /// open with `skipUnlessRunningInEnglish(matching:)`: under the test
+    /// The label is matched in English. All three tests in this class
+    /// therefore open with `skipUnlessRunningInEnglish(matching:)`: under the test
     /// plan's German configuration the same button is "Text löschen", this
     /// filter stops matching, and the audit fails on an issue no app-side
     /// change can fix. Needing a translation table to keep a suppression

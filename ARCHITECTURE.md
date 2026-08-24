@@ -141,6 +141,27 @@ keep and carries `nil`, which is what selects the full-screen presentation. An
 `Optional` payload rather than a fifth case, so the view's `switch` still has
 one failure branch to reason about.
 
+Carrying rows *forward* out of a failure is the part that needs a rule, and
+the rule is the interesting bit. When a search starts from a `.failed` state
+that kept rows, the view model promotes those rows back onto the screen —
+`.loaded(stale, isRefreshing: true)` — only if the incoming query is one of
+two things: the query those rows answer (`lastCompletedQuery`, which is what
+pull-to-refresh re-runs and what re-submitting the same text produces), or the
+query whose failure put the banner there (`lastFailedQuery`, which is what the
+banner's own Retry re-runs). Anything else starts blank.
+
+Both halves were bugs at different times. Ungated, a brand-new query typed
+from a failure screen resurrected the previous search's rows and displayed
+them as its own, with a spinner claiming they were being refreshed — one
+query's results labelled as another's. Gated on `lastCompletedQuery` alone, a
+failed *refinement* blanked its rows the moment the user tapped the Retry the
+banner was offering, which is the one interaction the whole feature exists
+for. What the pair concedes is small and deliberate: after a failed
+refinement, Retry does redisplay the previous query's rows under the
+refinement's banner — but that is the screen the user is already looking at,
+and Retry asks to repeat what just happened rather than to ask something
+new.
+
 Illegal states stay unrepresentable; the enum just has to be honest about
 which states are actually legal.
 
@@ -159,8 +180,9 @@ identity argument, in the other direction, is why `FavoritesView` keeps one
 `List` and puts its empty state in an `.overlay`.
 
 Only when there are no rows does a `switch` decide the screen: the idle
-prompt, the spinner, the "no results" view for an empty `.loaded`, and the
-full-screen error with a retry button for a `.failed` with nothing to keep.
+prompt; the spinner, because only a load with nothing to keep blanks the
+screen; the "no results" view for an empty `.loaded`; and the full-screen
+error with a retry button for a `.failed` with nothing to keep.
 (The *model* says only "these are the results that were on screen"; the "is
 that worth showing" judgement lives in the view, which treats an empty stale
 array as nothing to keep — a zero-row list under an error bar is worse than
@@ -316,11 +338,15 @@ runtime's own answer to the question you are actually asking.
 `Tab(..., role: .search)`, which states what the tab *is* — the system pins it
 to the trailing edge and gives it the search presentation for the platform.
 It is easy to assume the iOS 26 chrome that usually accompanies it comes along
-for free. It doesn't: `.searchToolbarBehavior(.minimize)` (the search field
-collapsing toward the tab bar as you scroll into results) and
+for free. It doesn't: both behaviours are separate modifiers, applied
+explicitly, and they do not even live in the same file.
 `.tabBarMinimizeBehavior(.onScrollDown)` (the tab bar getting out of the way)
-are separate modifiers, applied explicitly here. Reading a role as a bundle of
-appearance is how a codebase acquires behaviour nobody can point at.
+is on the `TabView` in `RootView`; `.searchToolbarBehavior(.minimize)` (the
+search field collapsing toward the tab bar as you scroll into results) is in
+`SearchView`, on the same view as the `.searchable` field it governs — which
+is the only place it could be, since it configures that field's presentation.
+Reading a role as a bundle of appearance is how a codebase acquires behaviour
+nobody can point at.
 
 **`@Query` for reads, a store for writes.** `FavoritesView` and
 `RepoDetailView` both read favorites straight off SwiftData with `@Query` —
@@ -539,9 +565,12 @@ be `Color.primary.opacity(0.65)`, which the accessibility audit accepted and a
 user with Increase Contrast switched on did not: a fixed alpha is a claim
 about the background it will be composited over, and it opts the text out of
 the system's contrast substitution entirely, because there is nothing left for
-the system to substitute. `Color("Deemphasized")` names four measured values
+the system to substitute. `Color(.deemphasized)` names four measured values
 instead — light, dark, and a high-contrast variant of each — so asking for
-more contrast actually produces more contrast. (The reason it is not
+more contrast actually produces more contrast. (That spelling matters too: it
+is the asset catalog's generated symbol, so the name is checked by the
+compiler, where the older `Color("Deemphasized")` resolved at runtime and
+rendered a silent black if the asset were ever renamed.) (The reason it is not
 `.foregroundStyle(.secondary)` at all is the audit's original finding: the
 system `secondaryLabel` renders around 3.9:1 against the default background,
 under AA's 4.5:1 for text below 18pt, which is every line in this row. A
@@ -572,23 +601,32 @@ button title, and the four VoiceOver sentences are unreadable.
 
 **German is not a smoke test you remember to run; it is a test plan
 configuration.** `testExample.xctestplan` declares two configurations,
-English (no override) and German (`language: de`, `region: DE`), so *every*
-test invocation — `xcodebuild test`, `Cmd-U`, either `-only-testing:` suite —
-runs the whole thing twice. The unit suite's German pass is what proves the
-catalog's plural rules; the UI suite's is what proves the screens still work
-when every string gets longer.
+English (`language: en`, `region: US`) and German (`language: de`,
+`region: DE`), so *every* test invocation — `xcodebuild test`, `Cmd-U`,
+either `-only-testing:` suite — runs the whole thing twice. The unit suite's
+German pass is what proves the catalog's plural rules; the UI suite's is what
+proves the screens still work when every string gets longer.
 
 Almost all of the UI suite survives that, because it queries by accessibility
 identifier: screens, rows, the error text, and — since `Tab` carries an
 `.accessibilityIdentifier` onto the tab-bar button it produces — the tabs.
-Four test cases cannot, because they match three strings **Apple** owns and
+Five test cases cannot, because they match strings **Apple** owns and
 translates: `ContentUnavailableView.search(text:)`'s "No Results" title,
 `EditButton`'s "Edit" together with the "Delete" confirmation it leads to, and
 `UISearchTextField`'s "Clear text" button (matched only to *suppress* an
-unfixable hit-region issue in the accessibility audit). The tests that touch
-those open with `skipUnlessRunningInEnglish(matching:)`, so the German run
-reports them as skipped, with the reason, instead of failing on a string this
-app does not own.
+unfixable hit-region issue in the accessibility audit — three tests share that
+one). Those five open with `skipUnlessRunningInEnglish(matching:)`, so the
+German run reports them as skipped, with the reason, instead of failing on a
+string this app does not own.
+
+Two more skip under German for an unrelated reason:
+`ScreenshotGalleryUITests` produces the README's images once, from the
+development-language run, and its German capture sets `-AppleLanguages` on its
+own launch. Those two deliberately do *not* use the same helper — its skip
+message says the test matches a string Apple localizes, which would be false
+here, and a skip reason that misdescribes itself is worse than none. They
+share the language check and supply their own sentence. Seven skips under
+German, then, from two different causes; the test report names both.
 
 That gate is a runtime check rather than plan configuration for a reason worth
 recording: a test plan configuration carries `language` and `region` but *not*
@@ -603,7 +641,8 @@ exist for.
 The unglamorous settings, and why each is what it is.
 
 **The scheme is shared, and it runs a shared test plan.**
-`xcshareddata/xcschemes/testExample.xcscheme` is committed; `.gitignore`
+`testExample/testExample.xcodeproj/xcshareddata/xcschemes/testExample.xcscheme`
+is committed; `.gitignore`
 excludes `xcuserdata/` and says, in two lines, why the other half of that pair
 needs no negation to stay tracked. Xcode autocreates a *user* scheme the
 first time you open a project, which works locally and then doesn't exist on
@@ -627,12 +666,16 @@ figure that flatters itself is worse than none. Read it with
 **A CI workflow for a remote this repo does not have yet.**
 `.github/workflows/ci.yml` runs the unit suite and the UI suite as two jobs on
 `macos-26`, each through the shared scheme — which means each through the test
-plan, in both languages. There is no `git remote` configured, so nothing has
-ever executed it; the header comment says so. It is committed anyway because
-the alternative is that the commands get reinvented, differently, by whoever
-first wires up a remote. Note the UI job's one non-obvious step: the software
-keyboard never appears while the simulator is paired with a hardware one, and
-`SearchScreen.search(for:)` waits on it.
+plan, in both languages — plus a third, advisory formatter job. There is no
+`git remote` configured, so nothing has ever executed it; the header comment
+says so. It is committed anyway because the alternative is that the commands
+get reinvented, differently, by whoever first wires up a remote. Two of its
+steps are worth knowing about. The software keyboard never appears while the
+simulator is paired with a hardware one, and `SearchScreen.search(for:)` waits
+on it, so the UI job turns the pairing off. And that job writes a result
+bundle and uploads it with `if: always()`: a UI failure on a hosted runner is
+otherwise a log line, with the screenshots and accessibility snapshots left
+inside a bundle on a machine that is about to be destroyed.
 
 **A `.swift-format` at the root.** Toolchain-native (`swift format`, no
 package to add), and tuned *to* this codebase rather than the other way
@@ -640,11 +683,22 @@ around: four-space indentation, a 120-column line limit because these files
 carry long explanatory comments, `indentConditionalCompilationBlocks: false`
 because whole files here are wrapped in `#if DEBUG` and indenting them all by
 four would be pure churn, and `AlwaysUseLowerCamelCase` off because the UI
-suite's BDD helpers are deliberately `Given`/`When`/`Then`/`And`. Running
-`swift format lint` still reports disagreements about where to break
-multi-line call arguments — the pretty-printer's opinion, not a rule
-violation — so the config is a record of house style, not a gate. Nothing in
-CI runs it.
+suite's BDD helpers are deliberately `Given`/`When`/`Then`/`And`.
+
+It is a record of house style, not a gate, and the numbers are worth stating
+rather than gesturing at.
+`xcrun swift-format lint --strict --recursive testExample` reports 188
+diagnostics across twelve files: 116 `Indentation`, 58 `AddLines`, 12
+`LineLength`, 2 `Spacing`. The first two categories are almost entirely the
+pretty-printer's view of how multi-line call arguments and collection literals
+should be laid out, which this codebase disagrees with deliberately — the
+alternative is reflowing readable fixtures and `#expect`s into the formatter's
+shape for no reader's benefit. The twelve long lines are the interesting ones,
+and nine of them are `String(localized:comment:)` translator comments: the
+`comment:` argument is a `StaticString`, so the only ways to shorten the line
+are to put a newline inside the comment a translator reads or to tell them
+less. The three that could be broken have been. CI runs the same command with
+`|| true` and prints the output; it never fails the build.
 
 **A privacy manifest, entirely empty.** `PrivacyInfo.xcprivacy` declares
 `NSPrivacyTracking = false` and three empty arrays. Empty is the *content*
@@ -671,6 +725,15 @@ once for a staging server and never removed.
 HTTPS via `URLSession`, which is exempt. Declaring it in the Info.plist is
 what spares every archive upload the export-compliance questionnaire.
 
+**The deployment target is the lowest one the code actually needs.**
+`IPHONEOS_DEPLOYMENT_TARGET = 26.0`, not the 26.2 the project was scaffolded
+with. Nothing here needs anything newer, and the compiler is what says so: an
+availability check runs against the deployment target on every build, so
+lowering it and building clean is the evidence. The higher number was
+excluding devices in exchange for nothing. A deployment target is a claim
+about the oldest OS a binary supports, and inheriting whatever the template
+wrote makes that claim by accident.
+
 **Device family is iPhone only.** `TARGETED_DEVICE_FAMILY = 1`. The app was
 previously advertising iPad support it had never been designed for, which is
 dishonest on its own — but it also exposed a concrete bug class: an
@@ -693,8 +756,10 @@ of their own. The dark variant's gradient is lifted from the light icon's
 near-black and the darker blue would nearly disappear against it. The tinted
 variant is greyscale spanning white to mid-grey: the system maps *luminance*
 onto the user's chosen colour, so a flat grey glyph tints to a flat slab and a
-wide luminance range is what keeps the shape legible. Verifiable in one line —
-`sips -g hasAlpha Icon-*.png` — which is the point of writing it down.
+wide luminance range is what keeps the shape legible. Verifiable in one line,
+from the repository root —
+`/usr/bin/sips -g hasAlpha testExample/testExample/Assets.xcassets/AppIcon.appiconset/Icon-*.png`
+— which is the point of writing it down.
 
 **No `DEVELOPMENT_TEAM`.** A personal Apple team ID is account-specific and
 belongs to a person, not a repository. With `CODE_SIGN_STYLE = Automatic`,

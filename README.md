@@ -45,10 +45,14 @@ anywhere else in the app.
 
 Building and running RepoScout requires **Xcode 26.2 or later**. The project
 targets Swift 6 language mode with the compiler's default actor isolation
-set to `MainActor` and approachable concurrency enabled — both are project
-settings, not something you need to configure yourself, but they're why the
-codebase reads the way it does (see `ARCHITECTURE.md` for what that means in
-practice).
+set to `MainActor` and approachable concurrency enabled. Both are **target**
+build settings, not something you need to configure yourself, but they're why
+the codebase reads the way it does (see `ARCHITECTURE.md` for what that means
+in practice). Note which targets: approachable concurrency is on for all
+three, while default-`MainActor` isolation is set on the **app target only**.
+That is deliberate — the unit suite is deliberately *not* main-actor by
+default, which is why suites that touch `SearchViewModel` carry an explicit
+`@MainActor` and say so in a comment.
 
 ## Running the app
 
@@ -59,62 +63,74 @@ app that launches is RepoScout, with that name and icon.) No API key or
 configuration is required: GitHub's search endpoint is public and the app
 calls it directly over `URLSession`.
 
-The app is iPhone-only and English/German. Both are deliberate; see the
-"Shipping hygiene" section of `ARCHITECTURE.md`.
+The app is iPhone-only and English/German. Both are deliberate, and they are
+argued in two different places: iPhone-only under "Shipping hygiene" in
+`ARCHITECTURE.md`, the two languages under "Accessibility and localization"
+in the same file.
 
 ## Running the tests
 
 RepoScout has two independent test suites: a Swift Testing unit suite that
 covers decoding, the search view model's state machine and cancellation
 behaviour, the live network client's URL construction and HTTP-status-to-error
-mapping, and the SwiftData favorites store; and an XCTest-based UI suite that
-drives the real app through its screens against a mocked network so it stays
-hermetic and offline, including an accessibility audit at default and
-accessibility text sizes.
+mapping, the SwiftData favorites store, and — in `RepoRowLabelTests` — the
+localized VoiceOver sentences a row speaks, in both languages; and an
+XCTest-based UI suite that drives the real app through its screens against a
+mocked network so it stays hermetic and offline, including an accessibility
+audit at default and accessibility text sizes.
 
-The scheme is shared (`testExample.xcodeproj/xcshareddata/xcschemes/`), so
-every command below works on a fresh clone — no "scheme not found", and
+The scheme is shared — it lives at
+`testExample/testExample.xcodeproj/xcshareddata/xcschemes/testExample.xcscheme`
+— so every command below works on a fresh clone: no "scheme not found", and
 nothing to configure in Xcode first.
+
+**Run every command in this section from `testExample/`**, the directory that
+holds `testExample.xcodeproj`. They are written without a leading `cd` so they
+can be copied singly.
 
 **Every command below runs the suite twice.** The scheme's test action points
 at a shared test plan, `testExample/testExample.xctestplan`, which declares two
-configurations: English (no override) and German (`de`/`DE`). So a plain
+configurations: English (`en`/`US`) and German (`de`/`DE`). So a plain
 `xcodebuild test` runs both languages, and the German pass is the app's
 localization check rather than something a maintainer has to remember. Budget
-roughly twice the wall-clock time you would expect — about eleven minutes for
+roughly twice the wall-clock time you would expect — about twelve minutes for
 the UI suite across both configurations, a couple of minutes for the unit
-suite. Four UI tests match strings Apple localizes (the "No Results" title,
-`EditButton`/"Delete", the search field's "Clear text" button) and report
-themselves as *skipped* under German, with the reason; that is expected, not a
-failure.
+suite.
 
-Run everything — unit and UI — from the command line:
+Some UI tests skip themselves under German, report the reason, and are
+expected rather than a failure. Five match strings **Apple** owns and
+translates — `ContentUnavailableView.search(text:)`'s "No Results" title,
+`EditButton`'s "Edit" and the "Delete" confirmation it leads to, and
+`UISearchTextField`'s "Clear text" button — and two are the screenshot gallery
+above, which is produced once, in the development language. Seven, then, from
+two unrelated causes — and that is the same count the test report shows. If it
+ever differs, the report is right and this sentence is stale.
+
+Run everything — unit and UI:
 
 ```bash
-cd testExample
 xcodebuild test -project testExample.xcodeproj -scheme testExample -destination 'platform=iOS Simulator,name=iPhone 17 Pro'
 ```
 
 Run just the unit tests:
 
 ```bash
-cd testExample
 xcodebuild test -project testExample.xcodeproj -scheme testExample -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -only-testing:testExampleTests
 ```
 
 Run just the UI tests:
 
 ```bash
-cd testExample
 xcodebuild test -project testExample.xcodeproj -scheme testExample -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -only-testing:testExampleUITests
 ```
 
 The plan also turns code coverage on, scoped to the app target so the number
 describes the code under test rather than being inflated by the test bundles'
-coverage of themselves. Ask for a result bundle and read it back:
+coverage of themselves. It also enables per-test timeouts with a 120-second
+default allowance, so a hung UI test fails with a message instead of consuming
+the whole run. Ask for a result bundle and read the coverage back:
 
 ```bash
-cd testExample
 xcodebuild test -project testExample.xcodeproj -scheme testExample \
   -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \
   -resultBundlePath /tmp/RepoScout.xcresult
@@ -131,14 +147,34 @@ You can equally well run either suite from Xcode's Test navigator (`Cmd-U`
 runs both by default; select a specific suite to scope it). The configuration
 picker in the test plan editor is where you can run just one language.
 
-There is a GitHub Actions workflow at `.github/workflows/ci.yml` that runs the
-two suites as separate jobs on a macOS 26 runner. Nothing has ever executed
-it — this repository has no remote — but it is the same two commands as above,
-committed so the first push to a remote inherits them.
+There is a GitHub Actions workflow at `.github/workflows/ci.yml` with three
+jobs on a macOS 26 runner: the unit suite, the UI suite (which writes a result
+bundle and uploads it as an artifact even when the run passes, because a UI
+failure on a runner is otherwise a log line with the screenshots left behind
+on a machine that no longer exists), and an advisory formatter pass. Nothing
+has ever executed it — this repository has no remote — but the two test
+commands are the ones above, committed so the first push to a remote inherits
+them.
 
 A `.swift-format` at the repository root records the house style (four-space
-indentation, 120 columns) for `swift format`, which ships with the toolchain.
-It is a reference, not a gate: no build or CI step runs it.
+indentation, 120 columns) for `swift-format`, which ships with the toolchain.
+It is a record, not a gate, and the honest reason is visible in what it
+reports. Running
+
+```bash
+xcrun swift-format lint --strict --recursive testExample
+```
+
+produces 188 diagnostics across twelve files, and only twelve of them are
+`LineLength`. The rest — 116 `Indentation`, 58 `AddLines`, 2 `Spacing` — are
+the pretty-printer's opinions about where to break multi-line call arguments
+and how to lay out multi-line collection literals, which this codebase
+disagrees with on purpose. Of the twelve long lines, nine are
+`String(localized:comment:)` translator comments: the argument is a
+`StaticString`, so it cannot be split without either putting a newline into
+the comment a translator reads or shortening what it tells them. The three
+that could be broken were. The CI job runs the same command with `|| true` and
+surfaces the output; it does not fail the build.
 
 ## What to look at
 
@@ -157,6 +193,7 @@ the fastest path to the interesting parts.
 | Localization (String Catalog, commented keys, plural *substitutions* inside whole-sentence accessibility labels, full German) | `testExample/testExample/Views/Search/RepoRowView.swift`, `testExample/testExample/Localizable.xcstrings` |
 | A test plan with two language configurations, and coverage scoped to the app | `testExample/testExample.xctestplan` |
 | Accessibility (merged row elements, Dynamic Type via `ViewThatFits`, a VoiceOver-safe ticker) | `testExample/testExample/Views/Search/RepoRowView.swift`, `testExample/testExample/Views/Search/SearchView.swift` |
+| README screenshots generated by the UI suite, not taken by hand | `testExample/testExampleUITests/ScreenshotGalleryUITests.swift` |
 
 `ARCHITECTURE.md` walks through how these pieces connect, with a reading
 path for whatever your starting point is.

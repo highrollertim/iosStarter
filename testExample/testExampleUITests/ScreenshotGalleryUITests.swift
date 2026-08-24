@@ -17,10 +17,14 @@ import XCTest
 /// captures whose *purpose* is a specific language, and the German one sets
 /// its own language on the launch below. Running the pair again under the test
 /// plan's German configuration would spend a minute of every CI run producing
-/// a second, redundant set — so both methods open with the same gate the other
-/// language-bound tests use. That gate is about which *configuration* is
-/// running, not about what these tests can see: the German capture below
-/// happens inside the English run.
+/// a second, redundant set.
+///
+/// So both methods gate on the configuration — but *not* through
+/// `skipUnlessRunningInEnglish(matching:)`, whose message says the test
+/// matches a string Apple localizes. That is true of the four tests that use
+/// it and false of these two, and a skip reason that misdescribes itself is
+/// worse than no skip reason. They share the language check
+/// (`currentTestLanguage`) and supply their own sentence.
 ///
 /// These tests assert only that the app reached the screen being photographed.
 /// That is the honest scope: an unreadable or empty screenshot fails here, but
@@ -34,7 +38,7 @@ final class ScreenshotGalleryUITests: XCTestCase {
 
     @MainActor
     func testCapturesTheEnglishGallery() throws {
-        try skipUnlessRunningInEnglish(matching: "the README's English screenshots")
+        try skipUnlessEnglishConfiguration()
 
         let app = XCUIApplication.launchedForUITest()
         let search = SearchScreen(app: app)
@@ -76,7 +80,7 @@ final class ScreenshotGalleryUITests: XCTestCase {
 
     @MainActor
     func testCapturesTheGermanSearchResults() throws {
-        try skipUnlessRunningInEnglish(matching: "the README's screenshots")
+        try skipUnlessEnglishConfiguration()
 
         // The app's own language, set on the launch rather than by the test
         // plan: this capture has to happen in the English configuration (see
@@ -108,6 +112,24 @@ final class ScreenshotGalleryUITests: XCTestCase {
         Then("the German results screen is captured") {
             attach(app.screenshot(), named: "04-search-results-de")
         }
+    }
+
+    /// Skips outside the plan's English configuration.
+    ///
+    /// Deliberately not `skipUnlessRunningInEnglish(matching:)` — see the type
+    /// comment. Nothing here matches a string Apple owns; the reason is that a
+    /// second, identical gallery is waste, and the German capture arranges its
+    /// own language.
+    private func skipUnlessEnglishConfiguration() throws {
+        try XCTSkipUnless(
+            currentTestLanguage == "en",
+            """
+            Captures the README's gallery, which is produced once, from the \
+            development-language configuration; the German image sets its own \
+            language on its launch. Current language: \
+            \(currentTestLanguage ?? "unknown").
+            """
+        )
     }
 
     /// `.keepAlways`, because the default (`.deletedWhenEntirelySuccessful`)
