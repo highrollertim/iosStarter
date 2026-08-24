@@ -106,8 +106,9 @@ abstract; it is correct with respect to whoever decodes it.
 
 **`LoadState`.** While a *first* request is in flight, the view model sets its
 `state` property to `.loading`; when the request finishes it becomes either
-`.loaded(repos, isRefreshing: false)` or `.failed(message:stale:)`. `LoadState`
-is a four-case enum — `idle`, `loading`, `loaded`, `failed` — that replaces the
+`.loaded(repos, isRefreshing: false)` or
+`.failed(message:stale:isRefreshing:)`. `LoadState` is a four-case enum —
+`idle`, `loading`, `loaded`, `failed` — that replaces the
 more common pattern of separate `isLoading: Bool`, `results: [Repo]`, and
 `error: Error?` properties, which together can represent nonsense combinations
 (loading *and* showing an old error, for instance) that this enum makes
@@ -118,12 +119,12 @@ nonisolated enum LoadState<Value: Sendable & Equatable>: Equatable, Sendable {
     case idle
     case loading
     case loaded(Value, isRefreshing: Bool)
-    case failed(message: String, stale: Value?)
+    case failed(message: String, stale: Value?, isRefreshing: Bool)
 }
 ```
 
-The two payloads that aren't in the textbook version are worth dwelling on,
-because they are the same lesson twice.
+The three payloads that aren't in the textbook version are worth dwelling on,
+because they are the same lesson three times.
 
 `isRefreshing` inside `loaded` exists because the four-case enum cannot
 express the fifth state a real search screen has: *results already on screen
@@ -141,14 +142,29 @@ keep and carries `nil`, which is what selects the full-screen presentation. An
 `Optional` payload rather than a fifth case, so the view's `switch` still has
 one failure branch to reason about.
 
+`isRefreshing` inside `failed` is the third, and it is the correction of a
+real bug rather than symmetry for its own sake. While a retry launched from
+the banner is in flight, the screen is still a failure: the banner is up, the
+rows are still under it, and a spinner says a request is running. The code
+used to represent that moment as `.loaded(stale, isRefreshing: true)` — and
+the promotion rule below is what made that fatal. Its `failed` branch is
+gated, its `loaded` branch deliberately is not, because rows in a genuine
+`.loaded` always belong to the query being refreshed. Laundering a failure
+into `.loaded` broke that premise: a query dispatched *during* the retry read
+the fake `.loaded`, took the ungated branch, and adopted rows answering a
+different question as its own — and its failure then carried them forward
+again, compounding across retries under rate limiting. Keeping the state
+`failed` for the whole retry is what lets the gate see the truth.
+
 Carrying rows *forward* out of a failure is the part that needs a rule, and
 the rule is the interesting bit. When a search starts from a `.failed` state
-that kept rows, the view model promotes those rows back onto the screen —
-`.loaded(stale, isRefreshing: true)` — only if the incoming query is one of
-two things: the query those rows answer (`lastCompletedQuery`, which is what
-pull-to-refresh re-runs and what re-submitting the same text produces), or the
-query whose failure put the banner there (`lastFailedQuery`, which is what the
-banner's own Retry re-runs). Anything else starts blank.
+that kept rows, the view model keeps those rows on the screen —
+`.failed(sameMessage, stale: rows, isRefreshing: true)` — only if the incoming
+query is one of two things: the query those rows answer
+(`lastCompletedQuery`, which is what pull-to-refresh re-runs and what
+re-submitting the same text produces), or the query whose failure put the
+banner there (`lastFailedQuery`, which is what the banner's own Retry
+re-runs). Anything else starts blank.
 
 Both halves were bugs at different times. Ungated, a brand-new query typed
 from a failure screen resurrected the previous search's rows and displayed
@@ -169,7 +185,7 @@ which states are actually legal.
 load-bearing. The view first asks `displayedRows` whether there are rows worth
 reading — a non-empty `.loaded`, or a `.failed` that kept non-empty stale
 results. If there are, the screen is **one** `List`, and `.loaded` and
-`.failed(_, stale:)` are the *same* view identity: crossing between them
+`.failed(_, stale:, _)` are the *same* view identity: crossing between them
 updates a list rather than destroying one and building another. That is what
 keeps the scroll position, lets rows animate, keeps pull-to-refresh reachable
 while the banner is up, and gives the "updated N seconds ago" ticker a
@@ -610,14 +626,14 @@ proves the screens still work when every string gets longer.
 Almost all of the UI suite survives that, because it queries by accessibility
 identifier: screens, rows, the error text, and — since `Tab` carries an
 `.accessibilityIdentifier` onto the tab-bar button it produces — the tabs.
-Five test cases cannot, because they match strings **Apple** owns and
+Six test cases cannot, because they match strings **Apple** owns and
 translates: `ContentUnavailableView.search(text:)`'s "No Results" title,
 `EditButton`'s "Edit" together with the "Delete" confirmation it leads to, and
 `UISearchTextField`'s "Clear text" button (matched only to *suppress* an
-unfixable hit-region issue in the accessibility audit — three tests share that
-one). Those five open with `skipUnlessRunningInEnglish(matching:)`, so the
-German run reports them as skipped, with the reason, instead of failing on a
-string this app does not own.
+unfixable hit-region issue in the accessibility audit — all four audit tests
+share that one). Those six open with `skipUnlessRunningInEnglish(matching:)`,
+so the German run reports them as skipped, with the reason, instead of failing
+on a string this app does not own.
 
 Two more skip under German for an unrelated reason:
 `ScreenshotGalleryUITests` produces the README's images once, from the
@@ -625,7 +641,7 @@ development-language run, and its German capture sets `-AppleLanguages` on its
 own launch. Those two deliberately do *not* use the same helper — its skip
 message says the test matches a string Apple localizes, which would be false
 here, and a skip reason that misdescribes itself is worse than none. They
-share the language check and supply their own sentence. Seven skips under
+share the language check and supply their own sentence. Eight skips under
 German, then, from two different causes; the test report names both.
 
 That gate is a runtime check rather than plan configuration for a reason worth
@@ -686,19 +702,34 @@ four would be pure churn, and `AlwaysUseLowerCamelCase` off because the UI
 suite's BDD helpers are deliberately `Given`/`When`/`Then`/`And`.
 
 It is a record of house style, not a gate, and the numbers are worth stating
-rather than gesturing at.
-`xcrun swift-format lint --strict --recursive testExample` reports 188
-diagnostics across twelve files: 116 `Indentation`, 58 `AddLines`, 12
-`LineLength`, 2 `Spacing`. The first two categories are almost entirely the
-pretty-printer's view of how multi-line call arguments and collection literals
-should be laid out, which this codebase disagrees with deliberately — the
-alternative is reflowing readable fixtures and `#expect`s into the formatter's
-shape for no reader's benefit. The twelve long lines are the interesting ones,
-and nine of them are `String(localized:comment:)` translator comments: the
-`comment:` argument is a `StaticString`, so the only ways to shorten the line
-are to put a newline inside the comment a translator reads or to tell them
-less. The three that could be broken have been. CI runs the same command with
-`|| true` and prints the output; it never fails the build.
+rather than gesturing at. Run from the **repository root** (`testExample` is
+the path being linted, not a working directory), and identical to the line in
+`.github/workflows/ci.yml`:
+
+```bash
+xcrun swift-format lint --recursive testExample
+```
+
+It reports 265 diagnostics across twelve files: 177 `Indentation`, 77
+`AddLines`, 9 `LineLength`, 2 `Spacing`. The first two categories — 254 of the
+265 — are almost entirely the pretty-printer's view of how multi-line call
+arguments and collection literals should be laid out, which this codebase
+disagrees with deliberately: the alternative is reflowing readable fixtures
+and `#expect`s into the formatter's shape for no reader's benefit. Those two
+categories *grow* whenever a long line is hand-wrapped, because a wrapped call
+is precisely what the pretty-printer has an opinion about; the total went up
+in the same round that removed four `LineLength` warnings, which is worth
+knowing before reading the number as a quality score.
+
+The nine long lines are the interesting ones, and all nine are
+`String(localized:comment:)` translator comments. The `comment:` argument is a
+`StaticString`, so the only ways to shorten one of those lines are to put a
+newline inside the comment a translator reads or to tell them less. Every long
+line that *could* be broken has been, which is why the count and the
+explanation are the same number: there is no remainder to account for. CI runs
+this exact command with `|| true` and prints the output; it never fails the
+build, and it carries no `--strict`, whose only effect would be an exit status
+`|| true` discards.
 
 **A privacy manifest, entirely empty.** `PrivacyInfo.xcprivacy` declares
 `NSPrivacyTracking = false` and three empty arrays. Empty is the *content*

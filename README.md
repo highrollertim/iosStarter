@@ -1,8 +1,12 @@
 # RepoScout
 
-| Search | Detail | Favorites | Search (German) |
-| --- | --- | --- | --- |
-| ![Search results for "swift", three repositories in a list above a timestamp footer](docs/screenshots/01-search-results.png) | ![The apple/swift detail screen, showing About, Stats and a link back to GitHub](docs/screenshots/02-repo-detail.png) | ![The Favorites tab with apple/swift saved](docs/screenshots/03-favorites.png) | ![The same search results under German, with German number formatting and "Vor 1 Sekunde aktualisiert"](docs/screenshots/04-search-results-de.png) |
+| Search | Detail |
+| --- | --- |
+| ![Search results for "swift", three repositories in a list above a timestamp footer](docs/screenshots/01-search-results.png) | ![The apple/swift detail screen, showing About, Stats and a link back to GitHub](docs/screenshots/02-repo-detail.png) |
+
+| Favorites | Search (German) |
+| --- | --- |
+| ![The Favorites tab with apple/swift saved](docs/screenshots/03-favorites.png) | ![The same search results under German, with German number formatting and "Vor 1 Sekunde aktualisiert"](docs/screenshots/04-search-results-de.png) |
 
 Those four images are taken **by the test suite**, from the same hermetic
 launch every UI test uses, so they cannot drift from the app without a run
@@ -93,18 +97,20 @@ at a shared test plan, `testExample/testExample.xctestplan`, which declares two
 configurations: English (`en`/`US`) and German (`de`/`DE`). So a plain
 `xcodebuild test` runs both languages, and the German pass is the app's
 localization check rather than something a maintainer has to remember. Budget
-roughly twice the wall-clock time you would expect — about twelve minutes for
-the UI suite across both configurations, a couple of minutes for the unit
-suite.
+roughly twice the wall-clock time you would expect: a full run lands around
+twelve minutes, nearly all of it the UI suite, and the unit suite on its own
+is a couple of minutes. (The guide's §2 and `ci.yml`'s timeout comment quote
+the same hedged figure; if one moves, move all three.)
 
 Some UI tests skip themselves under German, report the reason, and are
-expected rather than a failure. Five match strings **Apple** owns and
+expected rather than a failure. Six match strings **Apple** owns and
 translates — `ContentUnavailableView.search(text:)`'s "No Results" title,
 `EditButton`'s "Edit" and the "Delete" confirmation it leads to, and
-`UISearchTextField`'s "Clear text" button — and two are the screenshot gallery
-above, which is produced once, in the development language. Seven, then, from
-two unrelated causes — and that is the same count the test report shows. If it
-ever differs, the report is right and this sentence is stale.
+`UISearchTextField`'s "Clear text" button, which the four accessibility audits
+share — and two are the screenshot gallery above, which is produced once, in
+the development language. Eight, then, from two unrelated causes — and that is
+the same count the test report shows. If it ever differs, the report is right
+and this sentence is stale.
 
 Run everything — unit and UI:
 
@@ -159,22 +165,37 @@ them.
 A `.swift-format` at the repository root records the house style (four-space
 indentation, 120 columns) for `swift-format`, which ships with the toolchain.
 It is a record, not a gate, and the honest reason is visible in what it
-reports. Running
+reports.
+
+**This one command runs from the repository root**, not from `testExample/`
+like the rest of this section — `testExample` is the path it lints, and it is
+the same line `.github/workflows/ci.yml` runs:
 
 ```bash
-xcrun swift-format lint --strict --recursive testExample
+xcrun swift-format lint --recursive testExample
 ```
 
-produces 188 diagnostics across twelve files, and only twelve of them are
-`LineLength`. The rest — 116 `Indentation`, 58 `AddLines`, 2 `Spacing` — are
-the pretty-printer's opinions about where to break multi-line call arguments
-and how to lay out multi-line collection literals, which this codebase
-disagrees with on purpose. Of the twelve long lines, nine are
-`String(localized:comment:)` translator comments: the argument is a
-`StaticString`, so it cannot be split without either putting a newline into
-the comment a translator reads or shortening what it tells them. The three
-that could be broken were. The CI job runs the same command with `|| true` and
-surfaces the output; it does not fail the build.
+It reports **265 diagnostics across twelve files: 177 `Indentation`, 77
+`AddLines`, 9 `LineLength`, 2 `Spacing`.** The first two categories — 254 of
+the 265 — are the pretty-printer's opinions about where to break multi-line
+call arguments and how to lay out multi-line collection literals, which this
+codebase disagrees with on purpose: reflowing readable fixtures and `#expect`s
+into the formatter's shape serves no reader. Note that those two categories
+*grow* when a long line is broken by hand, because a wrapped call is exactly
+what the pretty-printer then has an opinion about — which is why the count
+went up, not down, in the round that removed four `LineLength` warnings.
+
+The nine long lines are the interesting ones, and every one of them is a
+`String(localized:comment:)` translator comment. That argument is a
+`StaticString`, so the line cannot be shortened without either putting a
+newline into the comment a translator reads or telling them less — neither of
+which is a trade worth making for a column count. There is no residue here:
+long lines that *could* be broken have been, which is why nine is both the
+count and the whole explanation.
+
+CI runs this exact command with `|| true` and surfaces the output. There is no
+`--strict`, because that flag's only effect is a non-zero exit status that
+`|| true` would immediately discard.
 
 ## What to look at
 
