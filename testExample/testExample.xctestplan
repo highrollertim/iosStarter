@@ -4,7 +4,8 @@
       "id" : "1C7A0E4E-2F5B-4C0B-9E2A-0B4D8E6A1001",
       "name" : "English",
       "options" : {
-
+        "language" : "en",
+        "region" : "US"
       }
     },
     {
@@ -25,7 +26,9 @@
           "name" : "testExample"
         }
       ]
-    }
+    },
+    "defaultTestExecutionTimeAllowance" : 120,
+    "testTimeoutsEnabled" : true
   },
   "testTargets" : [
     {

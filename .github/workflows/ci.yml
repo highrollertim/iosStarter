@@ -3,10 +3,11 @@
 # the first push to GitHub gets the same two commands the README documents,
 # rather than someone reinventing them under time pressure.
 #
-# Both jobs run the shared `testExample` scheme, which means both run
+# The two test jobs run the shared `testExample` scheme, which means both run
 # `testExample.xctestplan` — English *and* German. That is deliberate: the
 # German configuration is the app's localization check, and a check that only
-# runs when someone remembers to ask for it is not a check.
+# runs when someone remembers to ask for it is not a check. The third job is
+# the advisory formatter; it builds nothing and can only ever print.
 name: CI
 
 on:
@@ -55,4 +56,34 @@ jobs:
             -project testExample.xcodeproj \
             -scheme testExample \
             -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \
+            -resultBundlePath UITests.xcresult \
             -only-testing:testExampleUITests
+      # A UI failure on a runner is otherwise a log line and nothing else: the
+      # screenshots, the accessibility snapshots and the automatic
+      # `XCTAttachment`s all live inside the result bundle. `if: always()` is
+      # the point — the run that needs the bundle is the one that failed.
+      - name: Upload the result bundle
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-tests-xcresult
+          path: testExample/UITests.xcresult
+          retention-days: 7
+
+  lint:
+    name: swift-format (advisory)
+    runs-on: macos-26
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select Xcode 26.2
+        run: sudo xcode-select -s /Applications/Xcode_26.2.app
+      # Advisory on purpose, and the `|| true` is the whole design. The
+      # repository's `.swift-format` is stricter than its prose — long comment
+      # paragraphs are load-bearing teaching material here, and the line-length
+      # rule does not know that. So the diagnostics are printed where a reviewer
+      # can read them and are never allowed to fail the build. Drop the
+      # `|| true` the day the codebase is clean and the rule earns a veto.
+      - name: Lint
+        run: |
+          xcrun swift-format lint --strict --recursive testExample || true

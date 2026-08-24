@@ -18,6 +18,13 @@ timeline.xctimeline
 *.hmap
 *.ipa
 *.dSYM.zip
+# Result bundles from `xcodebuild -resultBundlePath`. They are directories,
+# tens of megabytes each, and the CI job uploads them as artifacts instead.
+*.xcresult
+
+# Local agent/tool state (lock files, transcripts). Machine-specific, and
+# nothing in the build or the test suite reads it.
+.claude/
 
 # Swift Package Manager
 .build/
