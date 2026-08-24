@@ -1,5 +1,28 @@
 # RepoScout
 
+| Search | Detail | Favorites | Search (German) |
+| --- | --- | --- | --- |
+| ![Search results for "swift", three repositories in a list above a timestamp footer](docs/screenshots/01-search-results.png) | ![The apple/swift detail screen, showing About, Stats and a link back to GitHub](docs/screenshots/02-repo-detail.png) | ![The Favorites tab with apple/swift saved](docs/screenshots/03-favorites.png) | ![The same search results under German, with German number formatting and "Vor 1 Sekunde aktualisiert"](docs/screenshots/04-search-results-de.png) |
+
+Those four images are taken **by the test suite**, from the same hermetic
+launch every UI test uses, so they cannot drift from the app without a run
+saying so. `ScreenshotGalleryUITests` attaches them; regenerate them from
+`testExample/` with:
+
+```bash
+xcodebuild test -project testExample.xcodeproj -scheme testExample \
+  -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \
+  -resultBundlePath /tmp/screenshots.xcresult \
+  -only-testing:testExampleUITests/ScreenshotGalleryUITests
+xcrun xcresulttool export attachments \
+  --path /tmp/screenshots.xcresult --output-path /tmp/shots
+```
+
+`/tmp/shots/manifest.json` maps each exported file to the attachment name it
+was given (`01-search-results` and so on); copy them to `docs/screenshots/`
+under those names and shrink them with
+`/usr/bin/sips -Z 800 docs/screenshots/*.png`.
+
 RepoScout is a small, complete reference app for practicing 2026-era iOS
 development. It searches GitHub's public repository index and lets you save
 results as favorites, and it exists to be *read* as much as to be run: every
