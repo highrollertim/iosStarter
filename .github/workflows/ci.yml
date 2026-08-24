@@ -27,7 +27,7 @@ jobs:
     runs-on: macos-26
     timeout-minutes: 20
     env:
-      DEVELOPER_DIR: /Applications/Xcode_26.2.app/Contents/Developer
+      DEVELOPER_DIR: /Applications/Xcode_26.2.0.app/Contents/Developer
     steps:
       - uses: actions/checkout@v4
       # The first thing to go wrong on a runner image update is the Xcode path
@@ -38,6 +38,7 @@ jobs:
         run: |
           ls -d /Applications/Xcode*.app
           xcodebuild -version
+          xcrun swiftc --version
       - name: Test
         working-directory: testExample
         run: |
@@ -66,13 +67,14 @@ jobs:
     # three.)
     timeout-minutes: 30
     env:
-      DEVELOPER_DIR: /Applications/Xcode_26.2.app/Contents/Developer
+      DEVELOPER_DIR: /Applications/Xcode_26.2.0.app/Contents/Developer
     steps:
       - uses: actions/checkout@v4
       - name: Show the available toolchains
         run: |
           ls -d /Applications/Xcode*.app
           xcodebuild -version
+          xcrun swiftc --version
       # `SearchScreen.search(for:)` waits on the software keyboard, which
       # never appears while the simulator is paired with a hardware one.
       - name: Disconnect the simulator's hardware keyboard
@@ -112,13 +114,14 @@ jobs:
     runs-on: macos-26
     timeout-minutes: 10
     env:
-      DEVELOPER_DIR: /Applications/Xcode_26.2.app/Contents/Developer
+      DEVELOPER_DIR: /Applications/Xcode_26.2.0.app/Contents/Developer
     steps:
       - uses: actions/checkout@v4
       - name: Show the available toolchains
         run: |
           ls -d /Applications/Xcode*.app
           xcodebuild -version
+          xcrun swiftc --version
       # Advisory on purpose, and the `|| true` is the whole design. The
       # repository's `.swift-format` is stricter than its prose — long comment
       # paragraphs are load-bearing teaching material here, and the line-length
