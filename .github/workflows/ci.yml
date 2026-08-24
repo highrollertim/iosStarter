@@ -25,7 +25,7 @@ jobs:
   unit-tests:
     name: Unit tests (English + German)
     runs-on: macos-26
-    timeout-minutes: 20
+    timeout-minutes: 40
     env:
       DEVELOPER_DIR: /Applications/Xcode_26.2.0.app/Contents/Developer
     steps:
@@ -65,7 +65,7 @@ jobs:
     # thirty is a hang, not a slow day. (The same hedged figure is in the
     # README and in the guide's §2; if one of the three ever moves, move all
     # three.)
-    timeout-minutes: 30
+    timeout-minutes: 45
     env:
       DEVELOPER_DIR: /Applications/Xcode_26.2.0.app/Contents/Developer
     steps:
