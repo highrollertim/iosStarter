@@ -295,7 +295,7 @@
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Finde Repositorys nach Namen, Thema oder Sprache."
+            "value": "Finde Repositorys nach Namen, Themen oder Sprachen."
           }
         }
       }
@@ -339,7 +339,7 @@
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "GitHub hat eine Antwort zurückgegeben, die diese App nicht lesen kann."
+            "value": "Die Antwort von GitHub konnte nicht gelesen werden."
           }
         }
       }
@@ -387,7 +387,7 @@
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Repositorys, die du zu deinen Favoriten hinzufügst, erscheinen hier."
+            "value": "Repositorys, die du als Favorit markierst, erscheinen hier."
           }
         }
       }
@@ -497,7 +497,7 @@
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Diese Suche kann nicht gesendet werden. Versuche es mit einem anderen Suchbegriff."
+            "value": "Diese Suchanfrage kann nicht gesendet werden. Versuche es mit einem anderen Suchbegriff."
           }
         }
       }
