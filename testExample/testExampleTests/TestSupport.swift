@@ -7,11 +7,31 @@ import Testing
 ///
 /// An actor, not a class-with-a-lock: test doubles are a natural place to
 /// demonstrate that actors are the default answer for mutable shared state.
+///
+/// The `async` on the initializer — here and on all six doubles in this file —
+/// is a CI-compatibility measure, not a design choice. GitHub's macOS runner
+/// ships a *refreshed distribution of the same-numbered* toolchain we build
+/// with locally (Xcode 26.2/17C52, swiftc 6.2.3), and its compiler infers
+/// `nonisolated` onto a synchronous actor initializer in a module with no
+/// default actor isolation — this test target — and then rejects what it just
+/// inferred: `error: 'nonisolated' on an actor's synchronous initializer is
+/// invalid`. Six errors, one per plain `init(...)` below. The app target has
+/// default MainActor isolation and is untouched, which is why
+/// `MockGitHubClient`'s synchronous actor init is never flagged.
+///
+/// This was diagnosed by diffing the CI logs against a local build
+/// flag-for-flag: identical compiler version *and* build number, identical
+/// `-swift-version 6`, and the same three `-enable-upcoming-feature` flags
+/// including `NonisolatedNonsendingByDefault`. The toolchain bundle itself was
+/// the only variable left. An `async` actor initializer is not a "synchronous
+/// initializer", so it falls outside that diagnostic entirely — on the CI
+/// compiler and on every compiler tested locally. The price is one `await` per
+/// construction site.
 actor SpyGitHubClient: GitHubClient {
     private(set) var queries: [String] = []
     private let result: Result<[Repo], GitHubClientError>
 
-    init(result: Result<[Repo], GitHubClientError>) {
+    init(result: Result<[Repo], GitHubClientError>) async {
         self.result = result
     }
 
@@ -43,7 +63,7 @@ actor ScriptedGitHubClient: GitHubClient {
     init(
         script: [Result<[Repo], GitHubClientError>],
         fallback: Result<[Repo], GitHubClientError> = .success([])
-    ) {
+    ) async {
         self.script = script
         self.fallback = fallback
     }
@@ -80,7 +100,7 @@ actor RogueCancellationGitHubClient: GitHubClient {
 
     /// - Parameter failures: how many leading calls throw `CancellationError`
     ///   before the client starts succeeding.
-    init(failures: Int = 1, repos: [Repo] = .fixture) {
+    init(failures: Int = 1, repos: [Repo] = .fixture) async {
         self.failures = failures
         self.repos = repos
     }
@@ -111,7 +131,7 @@ actor GatedGitHubClient: GitHubClient {
     private var waiters: [UUID: CheckedContinuation<Void, Never>] = [:]
     private let repos: [Repo]
 
-    init(repos: [Repo]) {
+    init(repos: [Repo]) async {
         self.repos = repos
     }
 
@@ -162,7 +182,7 @@ actor UncancellableGatedGitHubClient: GitHubClient {
     private var waiters: [CheckedContinuation<Void, Never>] = []
     private let repos: [Repo]
 
-    init(repos: [Repo]) {
+    init(repos: [Repo]) async {
         self.repos = repos
     }
 
@@ -233,7 +253,7 @@ actor KeyedGatedGitHubClient: GitHubClient {
     init(
         repos: [String: [Repo]] = [:],
         scripts: [String: [Result<[Repo], GitHubClientError>]] = [:]
-    ) {
+    ) async {
         self.repos = repos
         self.scripts = scripts
     }

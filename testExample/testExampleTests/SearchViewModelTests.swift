@@ -23,7 +23,7 @@ struct SearchViewModelTests {
 
     @Test("successful search moves loading → loaded")
     func successMovesThroughLoadingToLoaded() async throws {
-        let gate = GatedGitHubClient(repos: .fixture)
+        let gate = await GatedGitHubClient(repos: .fixture)
         let viewModel = SearchViewModel(client: gate)
         #expect(viewModel.state == .idle)
 
@@ -38,7 +38,7 @@ struct SearchViewModelTests {
 
     @Test("failed search surfaces the error's user-facing message")
     func failureSurfacesMessage() async {
-        let spy = SpyGitHubClient(result: .failure(.rateLimited))
+        let spy = await SpyGitHubClient(result: .failure(.rateLimited))
         let viewModel = SearchViewModel(client: spy)
 
         await viewModel.dispatch("swift").value
@@ -52,7 +52,7 @@ struct SearchViewModelTests {
 
     @Test("blank queries reset to idle without hitting the network", arguments: ["", "   ", "\n"])
     func blankQueriesResetToIdle(query: String) async {
-        let spy = SpyGitHubClient(result: .success(.fixture))
+        let spy = await SpyGitHubClient(result: .success(.fixture))
         let viewModel = SearchViewModel(client: spy)
 
         await viewModel.dispatch(query).value
@@ -68,7 +68,7 @@ struct SearchViewModelTests {
                  stargazersCount: 0, forksCount: 0, language: nil,
                  htmlURL: URL(string: "https://github.com/stale/repo")!)
         ]
-        let client = KeyedGatedGitHubClient(repos: ["swif": staleResult, "swift": .fixture])
+        let client = await KeyedGatedGitHubClient(repos: ["swif": staleResult, "swift": .fixture])
         let viewModel = SearchViewModel(client: client)
 
         await client.open("swif")
@@ -94,7 +94,7 @@ struct SearchViewModelTests {
         // and the refinement matches nothing. The empty screen has to say
         // "No Results for <the refining query>" — and it cannot ask
         // `searchText`, which is the live, un-debounced field.
-        let client = KeyedGatedGitHubClient(repos: ["swift": .fixture, "swiftzzz": []])
+        let client = await KeyedGatedGitHubClient(repos: ["swift": .fixture, "swiftzzz": []])
         let viewModel = SearchViewModel(client: client, debounceInterval: Self.neverFires)
 
         await client.open("swift")
@@ -115,7 +115,7 @@ struct SearchViewModelTests {
         // Blanking the screen on a failed refinement throws away the last
         // thing that worked. The failure is real and gets said out loud —
         // but over the results, not instead of them.
-        let client = ScriptedGitHubClient(
+        let client = await ScriptedGitHubClient(
             script: [.success(.fixture), .failure(.rateLimited)]
         )
         let viewModel = SearchViewModel(client: client, debounceInterval: Self.neverFires)
@@ -147,7 +147,7 @@ struct SearchViewModelTests {
         // not replaced by a spinner — and the state must still be `.failed`,
         // because it still is one. See `keptRowsCannotOutliveTheRetryTheySatUnder`
         // for what promoting to `.loaded` here cost.
-        let client = KeyedGatedGitHubClient(scripts: [
+        let client = await KeyedGatedGitHubClient(scripts: [
             "swift": [.success(.fixture), .failure(.rateLimited), .failure(.network)]
         ])
         let viewModel = SearchViewModel(client: client, debounceInterval: Self.neverFires)
@@ -203,7 +203,7 @@ struct SearchViewModelTests {
         // The in-flight moment is the whole assertion: terminal states cannot
         // tell a promotion from a fresh load that happened to fail with the
         // same stale array attached.
-        let client = KeyedGatedGitHubClient(
+        let client = await KeyedGatedGitHubClient(
             repos: ["swift": .fixture],
             scripts: ["swiftui": [.failure(.rateLimited), .failure(.network)]]
         )
@@ -270,7 +270,7 @@ struct SearchViewModelTests {
         // laundering happens, and both halves of that moment are asserted
         // below. Restore the promotion to `.loaded` and this test fails twice
         // over — on `.loading`, and on `stale: nil`.
-        let client = KeyedGatedGitHubClient(
+        let client = await KeyedGatedGitHubClient(
             repos: ["swift": .fixture],
             scripts: [
                 "swiftui": [.failure(.rateLimited), .failure(.network)],
@@ -344,7 +344,7 @@ struct SearchViewModelTests {
         //
         // Deleting the *other* disjunct leaves this passing and the test above
         // failing, and vice versa: two arms, two witnesses.
-        let client = KeyedGatedGitHubClient(
+        let client = await KeyedGatedGitHubClient(
             repos: ["swift": .fixture],
             scripts: ["swiftui": [.failure(.rateLimited)]]
         )
@@ -395,7 +395,7 @@ struct SearchViewModelTests {
                  stargazersCount: 0, forksCount: 0, language: nil,
                  htmlURL: URL(string: "https://github.com/stale/repo")!)
         ]
-        let client = KeyedGatedGitHubClient(scripts: [
+        let client = await KeyedGatedGitHubClient(scripts: [
             "swift": [.success(staleResult), .failure(.rateLimited)],
             "swiftui": [.failure(.network)],
         ])
@@ -433,7 +433,7 @@ struct SearchViewModelTests {
         // — a failure whose "preserved results" are an empty array. Promoting
         // that puts a zero-row list and a refresh spinner on screen in place of
         // the message the user needs.
-        let client = KeyedGatedGitHubClient(scripts: [
+        let client = await KeyedGatedGitHubClient(scripts: [
             "zzzz": [.success([]), .failure(.rateLimited), .success(.fixture)]
         ])
         let viewModel = SearchViewModel(client: client, debounceInterval: Self.neverFires)
@@ -473,7 +473,7 @@ struct SearchViewModelTests {
         // that B, still in flight, had just claimed. The user then retyped the
         // same text and paid for a duplicate round trip, because the `filter`
         // in `init` had nothing left to compare against.
-        let spy = SpyGitHubClient(result: .success(.fixture))
+        let spy = await SpyGitHubClient(result: .success(.fixture))
         let viewModel = SearchViewModel(client: spy, debounceInterval: .milliseconds(50))
 
         let blank = viewModel.dispatch("")
@@ -495,7 +495,7 @@ struct SearchViewModelTests {
     func firstLoadFailureCarriesNoStaleResults() async throws {
         // The other half of the same rule, and what selects the full-screen
         // error presentation in `SearchView`.
-        let spy = SpyGitHubClient(result: .failure(.network))
+        let spy = await SpyGitHubClient(result: .failure(.network))
         let viewModel = SearchViewModel(client: spy, debounceInterval: Self.neverFires)
 
         await viewModel.dispatch("swift").value
@@ -515,7 +515,7 @@ struct SearchViewModelTests {
                  htmlURL: URL(string: "https://github.com/stale/repo")!)
         ]
         let freshResult: [Repo] = .fixture
-        let client = KeyedGatedGitHubClient(repos: ["first": staleResult, "second": freshResult])
+        let client = await KeyedGatedGitHubClient(repos: ["first": staleResult, "second": freshResult])
         let viewModel = SearchViewModel(client: client)
 
         // The production funnel, not a hand-rolled imitation of it: the
@@ -561,7 +561,7 @@ struct SearchViewModelTests {
         // perfectly live task: the screen kept `.loading` forever, with no
         // Retry (it renders only on `.failed`) and the query still recorded
         // as dispatched, so retyping it was filtered out too.
-        let client = RogueCancellationGitHubClient(failures: 1)
+        let client = await RogueCancellationGitHubClient(failures: 1)
         let viewModel = SearchViewModel(client: client, debounceInterval: .milliseconds(50))
 
         viewModel.searchText = "swift"
@@ -589,7 +589,7 @@ struct SearchViewModelTests {
                  stargazersCount: 0, forksCount: 0, language: nil,
                  htmlURL: URL(string: "https://github.com/late/repo")!)
         ]
-        let client = UncancellableGatedGitHubClient(repos: staleResult)
+        let client = await UncancellableGatedGitHubClient(repos: staleResult)
         let viewModel = SearchViewModel(client: client)
 
         let search = viewModel.dispatch("late")
@@ -610,7 +610,7 @@ struct SearchViewModelTests {
 
     @Test("startTicker() seeds `now` immediately, then advances it; stopTicker() stops updates")
     func tickerSeedsStartsAndStops() async throws {
-        let spy = SpyGitHubClient(result: .success(.fixture))
+        let spy = await SpyGitHubClient(result: .success(.fixture))
         let viewModel = SearchViewModel(client: spy)
         let nowAtInit = viewModel.now
 
@@ -648,7 +648,7 @@ struct SearchViewModelTests {
     }
 
     @Test("startTicker() while already ticking does nothing at all")
-    func doubleStartTickerIsANoOp() {
+    func doubleStartTickerIsANoOp() async {
         // What the guard in `startTicker()` protects, precisely.
         //
         // It is *not* a leaked subscription, and the previous version of this
@@ -664,7 +664,7 @@ struct SearchViewModelTests {
         // second, a re-parented view) would move the clock the footer reads
         // for no reason. Asserting on the seed is fast, deterministic, and
         // fails the moment the guard goes.
-        let spy = SpyGitHubClient(result: .success(.fixture))
+        let spy = await SpyGitHubClient(result: .success(.fixture))
         let viewModel = SearchViewModel(client: spy)
 
         viewModel.startTicker()
@@ -676,8 +676,8 @@ struct SearchViewModelTests {
     }
 
     @Test("stopTicker() on a view model that never started is harmless")
-    func stopTickerWithoutStartDoesNotCrash() {
-        let spy = SpyGitHubClient(result: .success(.fixture))
+    func stopTickerWithoutStartDoesNotCrash() async {
+        let spy = await SpyGitHubClient(result: .success(.fixture))
         let viewModel = SearchViewModel(client: spy)
         let before = viewModel.now
 
@@ -717,7 +717,7 @@ struct SearchViewModelTests {
 
     @Test("rapid typing coalesces into a single request for the final text")
     func rapidTypingCoalesces() async throws {
-        let spy = SpyGitHubClient(result: .success(.fixture))
+        let spy = await SpyGitHubClient(result: .success(.fixture))
         let viewModel = SearchViewModel(client: spy, debounceInterval: .milliseconds(50))
 
         viewModel.searchText = "s"
@@ -733,7 +733,7 @@ struct SearchViewModelTests {
 
     @Test("after a success, re-submitting the same text does not re-search")
     func unchangedTextDoesNotResearchAfterSuccess() async throws {
-        let spy = SpyGitHubClient(result: .success(.fixture))
+        let spy = await SpyGitHubClient(result: .success(.fixture))
         let viewModel = SearchViewModel(client: spy, debounceInterval: .milliseconds(50))
 
         viewModel.searchText = "swift"
@@ -754,7 +754,7 @@ struct SearchViewModelTests {
         // The bug `removeDuplicates()` shipped: a search that failed was
         // literally unrepeatable by typing. The user had to change the text
         // and change it back to get another attempt at the identical query.
-        let client = ScriptedGitHubClient(
+        let client = await ScriptedGitHubClient(
             script: [.failure(.rateLimited), .success(.fixture)]
         )
         let viewModel = SearchViewModel(client: client, debounceInterval: .milliseconds(50))
@@ -782,7 +782,7 @@ struct SearchViewModelTests {
 
     @Test("retry() re-runs the failed query and can recover")
     func retryRecoversFromFailure() async throws {
-        let client = ScriptedGitHubClient(
+        let client = await ScriptedGitHubClient(
             script: [.failure(.rateLimited), .success(.fixture)]
         )
         let viewModel = SearchViewModel(client: client, debounceInterval: Self.neverFires)
@@ -809,7 +809,7 @@ struct SearchViewModelTests {
         // user empties the search field, so Retry can be tapped with nothing
         // to search for. The right answer is the idle prompt, not a request
         // for the empty string.
-        let client = ScriptedGitHubClient(script: [.failure(.rateLimited)])
+        let client = await ScriptedGitHubClient(script: [.failure(.rateLimited)])
         let viewModel = SearchViewModel(client: client, debounceInterval: Self.neverFires)
         viewModel.searchText = "swift"
 
@@ -829,7 +829,7 @@ struct SearchViewModelTests {
 
     @Test("submitImmediately() bypasses the debounce and de-dupes the pending emission")
     func submitImmediatelyBypassesDebounce() async throws {
-        let spy = SpyGitHubClient(result: .success(.fixture))
+        let spy = await SpyGitHubClient(result: .success(.fixture))
         // Long enough that the pipeline's own emission lands well after the
         // manual submit, which is the race `submitImmediately()` has to win.
         let viewModel = SearchViewModel(client: spy, debounceInterval: .milliseconds(200))
@@ -850,7 +850,7 @@ struct SearchViewModelTests {
 
     @Test("retry() suppresses the debounce emission that follows it")
     func retryDedupesTheFollowingEmission() async throws {
-        let spy = SpyGitHubClient(result: .success(.fixture))
+        let spy = await SpyGitHubClient(result: .success(.fixture))
         let viewModel = SearchViewModel(client: spy, debounceInterval: .milliseconds(50))
 
         viewModel.searchText = "swift"
@@ -880,7 +880,7 @@ struct SearchViewModelTests {
         // a bare query exercises the `filter`'s trim of the candidate; the
         // reverse — a padded query first, then the bare one — exercises
         // `dispatch(_:)`'s trim of the key it stores.
-        let spy = SpyGitHubClient(result: .success(.fixture))
+        let spy = await SpyGitHubClient(result: .success(.fixture))
         let viewModel = SearchViewModel(client: spy, debounceInterval: .milliseconds(50))
 
         viewModel.searchText = "swift"
@@ -899,7 +899,7 @@ struct SearchViewModelTests {
         // on screen. Note what the client receives, too: `search(matching:)`
         // sends the trimmed text, so the request and the key describe the same
         // string end to end.
-        let spy = SpyGitHubClient(result: .success(.fixture))
+        let spy = await SpyGitHubClient(result: .success(.fixture))
         let viewModel = SearchViewModel(client: spy, debounceInterval: .milliseconds(50))
 
         viewModel.searchText = "swift "
