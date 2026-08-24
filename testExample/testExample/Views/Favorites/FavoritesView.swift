@@ -10,6 +10,8 @@ struct FavoritesView: View {
     private var favorites: [FavoriteRepo]
 
     @Environment(\.modelContext) private var modelContext
+    /// Written when the last row goes away; see `.onChange` below.
+    @Environment(\.editMode) private var editMode
 
     var body: some View {
         NavigationStack {
@@ -60,6 +62,15 @@ struct FavoritesView: View {
             .navigationDestination(for: Repo.self) { repo in
                 RepoDetailView(repo: repo)
             }
+            // Deleting the last favorite hides the `EditButton` — and hiding
+            // the only control that can leave edit mode while edit mode is
+            // still *on* strands it. The next favorite the user adds then
+            // arrives into a list already in edit mode, with no visible way
+            // out. Closing the loop where it opens: the same emptiness that
+            // removes the button turns the mode off.
+            .onChange(of: favorites.isEmpty) {
+                if $1 { editMode?.wrappedValue = .inactive }
+            }
         }
     }
 
@@ -68,7 +79,13 @@ struct FavoritesView: View {
         // deleted row would emit a change notification per row — and `@Query`
         // would rebuild this list that many times — for what is, to the user,
         // a single action.
-        let doomed = offsets.map { favorites[$0] }
+        // `compactMap` over the indices rather than `map` over the offsets:
+        // an `IndexSet` is just numbers, and nothing in its type ties it to
+        // the array it came from. Subscripting blind traps on an offset that
+        // no longer exists — which is a real shape here, where `@Query` can
+        // deliver a shorter `favorites` between the row being swiped and this
+        // running. Skipping the missing index deletes what is still there.
+        let doomed = offsets.compactMap { favorites.indices.contains($0) ? favorites[$0] : nil }
         do {
             try FavoritesStore(context: modelContext).remove(doomed)
         } catch {

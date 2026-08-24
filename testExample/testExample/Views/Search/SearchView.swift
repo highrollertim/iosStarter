@@ -1,9 +1,29 @@
 import SwiftData
 import SwiftUI
 
-/// The search screen. Note the shape: the view is a pure function of
-/// `viewModel.state` — every case of `LoadState` maps to exactly one branch,
-/// and the compiler won't let us forget one.
+/// The search screen.
+///
+/// The shape, stated honestly, because the obvious description of it would be
+/// wrong. `content` has **two** forms, not one branch per `LoadState` case:
+///
+/// 1. Rows worth reading — a non-empty `.loaded`, or a `.failed` that kept
+///    non-empty stale results — render as **one** `List`. Both states share
+///    that single view identity; see `displayedRows`.
+/// 2. Everything else is a four-arm `switch`: idle, loading, loaded-but-empty,
+///    and failed-with-nothing-to-keep.
+///
+/// The `where` clauses in `displayedRows` are **not** compiler-verified. A
+/// `switch` whose arms are all guarded is not exhaustive, so it is the
+/// unguarded `default` that makes it compile — the compiler cannot tell us
+/// that the two guarded arms describe the states they claim to. What catches a
+/// mistake there is the test suite, not the build.
+///
+/// And the screen is not a pure function of `state` alone: two places read
+/// state that lives *beside* the enum. The empty branch and `.refreshable`
+/// read `lastCompletedQuery`, and the footer reads `lastRefreshed`/`now`.
+/// That is the deliberate trade behind keeping `LoadState` a generic lifecycle
+/// enum that knows nothing about searching (see `SearchViewModel`): the price
+/// is that a reader has to look in two places to know what this screen shows.
 struct SearchView: View {
     /// `@Bindable` bridges an `@Observable` object into bindings
     /// (`$viewModel.searchText`) — the successor to `@ObservedObject`.
@@ -37,45 +57,45 @@ struct SearchView: View {
         }
     }
 
+    /// The rows the screen is showing, or `nil` when it is showing something
+    /// other than rows.
+    ///
+    /// Two states carry results worth reading: a non-empty `.loaded`, and a
+    /// `.failed` that kept non-empty stale results under its banner. Naming
+    /// them together here is what lets `content` build **one** `List` for
+    /// both.
+    private var displayedRows: [Repo]? {
+        switch viewModel.state {
+        case .loaded(let repos, _) where !repos.isEmpty: repos
+        case .failed(_, let stale?) where !stale.isEmpty: stale
+        default: nil
+        }
+    }
+
+    /// True only while a `.loaded` state is revalidating. The failure states
+    /// are never "refreshing": the banner, not the spinner, is what they have
+    /// to say.
+    private var isRefreshing: Bool {
+        if case .loaded(_, let refreshing) = viewModel.state { refreshing } else { false }
+    }
+
     @ViewBuilder
     private var content: some View {
-        switch viewModel.state {
-        case .idle:
-            ContentUnavailableView(
-                "Search GitHub",
-                systemImage: "magnifyingglass",
-                description: Text("Find repositories by name, topic, or language.")
-            )
-        case .loading:
-            // Only a *first* load blanks the screen. A refinement of an
-            // existing result set keeps its list and flags itself in the
-            // footer instead — see `.loaded` below and `LoadState`.
-            ProgressView("Searching…")
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .accessibilityIdentifier("search.loading")
-        case .loaded(let repos, let isRefreshing) where repos.isEmpty:
-            // The title has to name the query that *produced* this empty set.
-            // `searchText` is the live field — still ahead of the debounce, and
-            // the user may already be typing the next query — so titling with
-            // it announces "No Results for …" about a search nobody has run.
-            // `lastCompletedQuery` is that query; `searchText` is the fallback
-            // for the case where nothing has completed yet.
-            ContentUnavailableView.search(
-                text: viewModel.lastCompletedQuery ?? viewModel.searchText
-            )
-            // `isRefreshing` is real here too: refining from an empty set is
-            // exactly when the user most needs to see that something is
-            // happening, and this branch has no list and no footer to say so.
-            .overlay(alignment: .bottom) {
-                if isRefreshing {
-                    ProgressView()
-                        .controlSize(.small)
-                        .padding()
-                        .accessibilityIdentifier("search.emptyRefreshing")
-                }
-            }
-        case .loaded(let repos, let isRefreshing):
-            List(repos) { repo in
+        if let rows = displayedRows {
+            // **One `List`, for both states that have rows** — the same lesson
+            // `FavoritesView` spells out for its empty state, in the other
+            // direction. There it is one `List` for its whole lifetime with the
+            // empty state as an overlay; here it is one `List` across
+            // `.loaded` ↔ `.failed(_, stale:)`. A `List` built in one `switch`
+            // arm and an identical `List` built in another are two *different*
+            // views to SwiftUI, so crossing between them destroys and rebuilds:
+            // scroll position resets, rows cut instead of animating, and every
+            // modifier attached below restarts — which is how the failure state
+            // used to lose `.refreshable`, lose the timestamp footer, and stop
+            // and restart the ticker on every failure. Hoisting the list out of
+            // the `switch` makes the transition an *update* of one view rather
+            // than a swap between two.
+            List(rows) { repo in
                 NavigationLink(value: repo) {
                     RepoRowView(repo: repo)
                 }
@@ -87,59 +107,140 @@ struct SearchView: View {
             // cure is editing the query. `dispatch(_:)` is what makes this
             // safe to expose — the pull cancels any in-flight search and
             // becomes the one that owns the screen.
-            .refreshable { await viewModel.dispatch(viewModel.searchText).value }
+            //
+            // It re-runs the query these rows *belong to*, not the live field:
+            // pulling mid-debounce would otherwise search half-typed text, and
+            // pulling on a cleared field would collapse the list to idle.
+            .refreshable {
+                await viewModel.dispatch(viewModel.lastCompletedQuery ?? viewModel.searchText).value
+            }
             // `safeAreaBar`, not `safeAreaInset`: the bar variant supplies the
             // system bar background and scroll-edge treatment itself, so the
             // leaf below carries no `.background(.bar)` and no width-stretching
             // frame of its own.
-            .safeAreaBar(edge: .bottom) {
-                LastRefreshedFooter(viewModel: viewModel, isRefreshing: isRefreshing)
-            }
+            .safeAreaBar(edge: .bottom) { bottomBar }
             // The ticker that drives `lastRefreshedDescription` only runs
             // while this list is on screen: start it when the results
-            // appear, stop it when they leave. See
-            // `SearchViewModel.startTicker()` for why an init-started timer
-            // on this app-lifetime view model would be wrong.
+            // appear, stop it when they leave. Its lifetime is the list's, so
+            // a failure that keeps its rows no longer stops and restarts it.
+            // See `SearchViewModel.startTicker()` for why an init-started
+            // timer on this app-lifetime view model would be wrong.
             .onAppear { viewModel.startTicker() }
             .onDisappear { viewModel.stopTicker() }
-        case .failed(let message, let stale?) where !stale.isEmpty:
-            // A refinement failed with results still on screen. Those results
-            // are the best thing anyone has, so the failure gets a bar rather
-            // than the whole window. Same two identifiers as the full-screen
-            // branch below — only one of the two ever renders, so UI tests
-            // find exactly one of each either way.
-            List(stale) { repo in
-                NavigationLink(value: repo) {
-                    RepoRowView(repo: repo)
-                }
-                .accessibilityIdentifier("search.row.\(repo.fullName)")
+            // A failure that keeps its rows is, visually, a bar appearing under
+            // a screen that is otherwise unchanged — and to VoiceOver it is
+            // nothing at all: focus does not move, no element the user is on
+            // has changed, so nothing is spoken. The full-screen failure branch
+            // needs no announcement for the opposite reason: replacing the
+            // content relocates focus, which the system speaks by itself.
+            .onChange(of: viewModel.state) { previous, current in
+                guard case .failed(let message, let stale?) = current, !stale.isEmpty else { return }
+                // Only on the way *in*. Retrying from the banner and failing
+                // again lands on `.failed` from `.loaded`, which is a new
+                // failure and worth saying; `.failed` → `.failed` is not.
+                if case .failed = previous { return }
+                AccessibilityNotification.Announcement(message).post()
             }
-            .accessibilityIdentifier("search.list")
-            .safeAreaBar(edge: .bottom) {
+        } else {
+            switch viewModel.state {
+            case .idle:
+                ContentUnavailableView(
+                    "Search GitHub",
+                    systemImage: "magnifyingglass",
+                    description: Text("Find repositories by name, topic, or language.")
+                )
+            case .loading:
+                // Only a load with nothing to keep blanks the screen. A
+                // refinement of an existing result set keeps its list and flags
+                // itself in the footer instead — see `LoadState` and
+                // `SearchViewModel.search(matching:)`.
+                ProgressView("Searching…")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .accessibilityIdentifier("search.loading")
+            case .loaded(_, let isRefreshing):
+                // Reached only with an empty result set: the non-empty case
+                // took the list path above.
+                //
+                // The title has to name the query that *produced* this empty
+                // set. `searchText` is the live field — still ahead of the
+                // debounce, and the user may already be typing the next query —
+                // so titling with it announces "No Results for …" about a
+                // search nobody has run.
+                //
+                // It is not the fallback either, and the old `?? searchText`
+                // overstated its own necessity: every writer of `.loaded`
+                // records `lastCompletedQuery` in the same main-actor turn (see
+                // `SearchViewModel.search(matching:)`), so a `.loaded` with no
+                // recorded query is unreachable in production — only the
+                // `#if DEBUG` preview seam can build one. Naming no query at
+                // all is the honest answer for that case, and the untitled
+                // system view is exactly it.
+                Group {
+                    if let query = viewModel.lastCompletedQuery {
+                        ContentUnavailableView.search(text: query)
+                    } else {
+                        ContentUnavailableView.search
+                    }
+                }
+                // `isRefreshing` is real here too: refining from an empty set is
+                // exactly when the user most needs to see that something is
+                // happening, and this branch has no list and no footer to say so.
+                .overlay(alignment: .bottom) {
+                    if isRefreshing {
+                        ProgressView()
+                            .controlSize(.small)
+                            .padding()
+                            .accessibilityIdentifier("search.emptyRefreshing")
+                            // Ambient status, like the footer's spinner: the
+                            // content here is the "no results" message, and an
+                            // unlabelled progress element beside it is noise.
+                            .accessibilityHidden(true)
+                    }
+                }
+            case .failed(let message, _):
+                // Nothing to keep: a load with no results behind it failed, or
+                // the last thing that succeeded had no results to preserve.
+                // Same two identifiers as the banner below — only one of the
+                // two ever renders, so UI tests find exactly one of each
+                // either way.
+                ContentUnavailableView {
+                    Label("Something went wrong", systemImage: "exclamationmark.triangle")
+                } description: {
+                    // The identifier goes on the description `Text`, never on
+                    // the `ContentUnavailableView`: a container-level
+                    // identifier is re-parented onto every child the view
+                    // merges, clobbering "search.retryButton" below.
+                    // Identifying the one leaf that is genuinely the error
+                    // message also gives UI tests something locale-independent
+                    // to match, which the literal English "Something went
+                    // wrong" was not.
+                    Text(message)
+                        .accessibilityIdentifier("search.errorView")
+                } actions: {
+                    Button("Retry") {
+                        viewModel.retry()
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .accessibilityIdentifier("search.retryButton")
+                }
+            }
+        }
+    }
+
+    /// The bar under the list.
+    ///
+    /// Under a failure it is the banner **and** the timestamp, stacked, not
+    /// the banner alone. "Updated N seconds ago" matters most precisely when
+    /// the rows above it are stale: it is the only thing on screen that says
+    /// how old the results the user is still reading actually are, and the
+    /// failure is the moment that stops being a detail.
+    @ViewBuilder
+    private var bottomBar: some View {
+        VStack(spacing: 0) {
+            if case .failed(let message, _) = viewModel.state {
                 ErrorBanner(message: message) { viewModel.retry() }
             }
-        case .failed(let message, _):
-            // Nothing to keep: a first load failed, or the last thing that
-            // succeeded had no results to preserve.
-            ContentUnavailableView {
-                Label("Something went wrong", systemImage: "exclamationmark.triangle")
-            } description: {
-                // The identifier goes on the description `Text`, never on the
-                // `ContentUnavailableView`: a container-level identifier is
-                // re-parented onto every child the view merges, clobbering
-                // "search.retryButton" below. Identifying the one leaf that is
-                // genuinely the error message also gives UI tests something
-                // locale-independent to match, which the literal English
-                // "Something went wrong" was not.
-                Text(message)
-                    .accessibilityIdentifier("search.errorView")
-            } actions: {
-                Button("Retry") {
-                    viewModel.retry()
-                }
-                .buttonStyle(.borderedProminent)
-                .accessibilityIdentifier("search.retryButton")
-            }
+            LastRefreshedFooter(viewModel: viewModel, isRefreshing: isRefreshing)
         }
     }
 }
@@ -180,7 +281,8 @@ private struct ErrorBanner: View {
 /// forever. (Re-evaluated, not re-rendered: SwiftUI's structural diffing
 /// elides the rows that did not change. The cost is the evaluation, and it is
 /// still a cost worth not paying once a second.) Pulled out into a leaf, the
-/// once-a-second dependency belongs to a view whose body is two `Text`s.
+/// once-a-second dependency belongs to a view whose body is a spinner and a
+/// `Text`.
 ///
 /// The insulation is one-directional, and worth being precise about: it keeps
 /// the ticker's invalidation *inside* this leaf, but it does not exempt the

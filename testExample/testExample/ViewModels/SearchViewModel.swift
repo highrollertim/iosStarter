@@ -51,10 +51,13 @@ final class SearchViewModel {
     private let client: any GitHubClient
     private let querySubject = PassthroughSubject<String, Never>()
     private var cancellables = Set<AnyCancellable>()
-    /// The one in-flight search. `dispatch(_:)` is the only writer, which is
-    /// what makes "cancel the previous search" a complete statement rather
-    /// than a hope — there is no route to `search(matching:)` that leaves a
-    /// task nobody holds.
+    /// The one in-flight search. `dispatch(_:)` is the only writer *of this
+    /// variable*, which is what makes "cancel the previous search" a complete
+    /// statement rather than a hope: there is no route to `search(matching:)`
+    /// that leaves a task nobody holds. It says nothing about the task's
+    /// lifetime — the task stored here may already have finished, and anyone
+    /// holding the value `dispatch(_:)` returned can cancel it from any
+    /// executor.
     private var searchTask: Task<Void, Never>?
     /// The trimmed query most recently dispatched. It is the pipeline's
     /// deduplication key; see the `filter` in `init` for why this replaced
@@ -188,6 +191,16 @@ final class SearchViewModel {
     /// going through `dispatch(_:)` would break both of that method's
     /// invariants.
     private func search(matching query: String) async {
+        // Above the blank guard, not below it, and that ordering is the whole
+        // point. A cancelled task has no business writing state — and the
+        // blank path was the one place one could: `dispatch("")` immediately
+        // followed by `dispatch("swift")` on the same main-actor turn schedules
+        // the blank task, cancels it, then lets it run anyway, where it nil'd
+        // the dedup key that the *live* "swift" search had just claimed. The
+        // next identical keystroke then sailed through the `filter` and paid
+        // for a duplicate round trip.
+        guard !Task.isCancelled else { return }
+
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
             state = .idle
@@ -202,41 +215,58 @@ final class SearchViewModel {
             return
         }
 
-        guard !Task.isCancelled else { return }
-
-        // Stale-while-revalidate: if results are on screen, keep them there
-        // and just flag the refresh — and "on screen" includes the results
-        // under a failure banner. Retry from that banner re-enters here with
-        // state `.failed(_, stale:)`; reading only `.loaded` would blank the
-        // exact results the banner promised to preserve, and a second failure
-        // would then drop them permanently. Only a genuine first load — no
-        // results anywhere in `state` — blanks the screen to a spinner.
+        // Stale-while-revalidate: if results are on screen, keep them there and
+        // just flag the refresh — and "on screen" includes the results under a
+        // failure banner. Retry from that banner re-enters here with state
+        // `.failed(_, stale:)`; reading only `.loaded` would blank the exact
+        // results the banner promised to preserve, and a second failure would
+        // then drop them permanently.
+        //
+        // The promotion is gated on `trimmed == lastCompletedQuery`, because it
+        // is only sound for *retrying the query those stale rows answer*.
+        // Ungated, a brand-new query typed from a failure screen resurrected
+        // the previous query's rows and showed them as its own — one search's
+        // results labelled as another's, with a spinner claiming they were
+        // being refreshed. Under rate limiting that compounds: every subsequent
+        // failure carries the same ancient rows forward again, and the screen
+        // drifts further from anything the user asked for. A new query with no
+        // history of its own has nothing to keep, and the blank screen is the
+        // correct answer for it.
+        //
+        // `staleResults` is produced *by* the branch that decides the state, so
+        // "the failure restores exactly the rows this search was refining" is
+        // structural rather than a claim about a later re-read of `state`. The
+        // `catch` below runs after an `await`, and reading `state` there would
+        // need an argument about who else could have written it meanwhile.
+        let staleResults: [Repo]?
         if case .loaded(let existing, _) = state {
             state = .loaded(existing, isRefreshing: true)
-        } else if case .failed(_, let stale?) = state, !stale.isEmpty {
+            staleResults = existing
+        } else if case .failed(_, let stale?) = state, !stale.isEmpty,
+                  trimmed == lastCompletedQuery {
             state = .loaded(stale, isRefreshing: true)
+            staleResults = stale
         } else {
             state = .loading
+            staleResults = nil
         }
-
-        // What is on screen right now, named once, before anything suspends.
-        // The `catch` below runs after an `await`, so reading `state` there
-        // would only be sound on the strength of the cancellation guard — the
-        // argument that no other search can have written to `state` meanwhile.
-        // Capturing here means the failure path does not need that argument:
-        // it restores the results this search was refining, by construction.
-        let staleResults: [Repo]? = if case .loaded(let existing, _) = state { existing } else { nil }
 
         do {
             let repos = try await client.searchRepositories(matching: trimmed)
-            // INVARIANT: this check cannot go stale. `self` is `@MainActor`,
-            // so the only code that can cancel `searchTask` runs on the main
-            // actor, and there is no suspension point between this `guard`
-            // and the writes below — the main actor cannot be re-entered in
-            // between. A cancellation racing us therefore either lands before
-            // the check (and we return) or after the writes (and the state is
-            // already the newer search's problem, not ours). Without that
-            // reasoning this would be a classic TOCTOU.
+            // INVARIANT, and it is about *turn atomicity*, not about who may
+            // cancel. `Task.cancel()` is `nonisolated` — anyone on any
+            // executor can call it, and this suite's own tests do — so the
+            // reassuring version of this argument ("only main-actor code can
+            // cancel us") is simply false.
+            //
+            // What holds: this `guard` and the three writes below are one
+            // uninterrupted main-actor turn, with no suspension point between
+            // them. A cancellation observed after the guard cannot un-write
+            // them, and the only canceller in production is a newer
+            // `dispatch(_:)`, which has already replaced `searchTask` and will
+            // write its own result over ours. So the worst case is a state
+            // that is briefly this search's and then immediately the newer
+            // search's — never a torn mixture of the two.
             guard !Task.isCancelled else { return }
             state = .loaded(repos, isRefreshing: false)
             lastCompletedQuery = trimmed
