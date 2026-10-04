@@ -18,8 +18,8 @@ on:
 # One live run per pull request. A new push supersedes the run in flight,
 # which otherwise keeps three macOS jobs busy producing a result nobody will
 # read. That matters more than it sounds: hosted macOS allows five concurrent
-# jobs, this workflow uses three per run, and two stale runs are enough to
-# queue the one that counts.
+# jobs, this workflow uses three per run, and one stale run is already enough
+# to queue part of the one that counts.
 #
 # Off a pull request the group is the commit itself, so runs on `main` never
 # share a group and never queue behind each other. That is the only shape

@@ -685,8 +685,9 @@ each through the test plan, in both languages — plus a third, advisory
 formatter job. It was written before the repository had a remote so the
 commands would not get reinvented, differently, by whoever first wired one up;
 it has run on hosted macOS since, and its timeout and concurrency comments
-reason from what those runs showed. Two of its steps are worth knowing about. The software keyboard never appears while the
-simulator is paired with a hardware one, and `SearchScreen.search(for:)` waits
+reason from what those runs showed. Two of its steps are worth knowing about.
+The software keyboard never appears while the simulator is paired with a
+hardware one, and `SearchScreen.search(for:)` waits
 on it, so the UI job turns the pairing off. And that job writes a result
 bundle and uploads it with `if: always()`: a UI failure on a hosted runner is
 otherwise a log line, with the screenshots and accessibility snapshots left

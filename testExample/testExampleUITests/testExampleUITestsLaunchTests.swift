@@ -62,7 +62,11 @@ import XCTest
 final class LaunchTests: XCTestCase {
 
     override class var runsForEachTargetApplicationUIConfiguration: Bool {
-        ProcessInfo.processInfo.environment["UI_CONFIG_MATRIX"] == "1"
+        // Both spellings, so the unprefixed form set in a scheme's test
+        // environment works as well as the `TEST_RUNNER_` form `xcodebuild`
+        // forwards, and neither is a silent no-op.
+        let environment = ProcessInfo.processInfo.environment
+        return environment["UI_CONFIG_MATRIX"] == "1" || environment["TEST_RUNNER_UI_CONFIG_MATRIX"] == "1"
     }
 
     override func setUpWithError() throws {
