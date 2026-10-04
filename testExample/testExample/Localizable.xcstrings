@@ -366,6 +366,17 @@
         }
       }
     },
+    "Not specified": {
+      "comment": "Value shown in the detail screen's Language row when GitHub reports no primary language for the repository.",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nicht angegeben"
+          }
+        }
+      }
+    },
     "Owner": {
       "comment": "Row label on the repository detail screen, beside the GitHub account that owns the repository.",
       "localizations": {

@@ -34,6 +34,16 @@ struct RepoDetailView: View {
         !matches.isEmpty
     }
 
+    /// Shown in the Language row when GitHub reports no primary language, so
+    /// the Stats section keeps the same four rows for every repository instead
+    /// of silently dropping one.
+    private var languageFallback: String {
+        String(
+            localized: "Not specified",
+            comment: "Value shown in the detail screen's Language row when GitHub reports no primary language for the repository."
+        )
+    }
+
     var body: some View {
         List {
             if let summary = repo.summary {
@@ -44,9 +54,7 @@ struct RepoDetailView: View {
             Section("Stats") {
                 LabeledContent("Stars", value: repo.stargazersCount.formatted())
                 LabeledContent("Forks", value: repo.forksCount.formatted())
-                if let language = repo.language {
-                    LabeledContent("Language", value: language)
-                }
+                LabeledContent("Language", value: repo.language ?? languageFallback)
                 LabeledContent("Owner", value: repo.ownerLogin)
             }
             // `webURL` is the model's answer to "is this link one we are
