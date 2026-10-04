@@ -1,0 +1,104 @@
+# Headless Claude Code review on every pull request.
+#
+# This is the Tier 1 reviewer from the harness design: `claude -p` runs the
+# repo's own `/review-pr` skill with read-only tools, a turn cap and a dollar
+# cap, and returns a verdict shaped by `verdict.schema.json`. A small script
+# turns that verdict into one PR comment that is edited in place on re-runs.
+#
+# It is advisory. Nothing here is a required check yet, and nothing here can
+# edit, push, or merge: the tool allowlist has no Edit or Write, the GitHub
+# token is held by the publish step, not the model, and the model never sees
+# the API key as text.
+#
+# The API key is a repository secret, `ANTHROPIC_CI_KEY`. It is never written
+# into this file. Fork PRs do not receive secrets, so they are skipped
+# explicitly rather than failing with a confusing auth error.
+#
+# Because the skill and hook live in this repo's `.claude/`, a PR can change
+# what the reviewer runs. That is acceptable for a personal experiment and is
+# exactly what the company version fixes by checking `.claude/` out of a
+# pinned harness repo instead.
+name: PR review
+
+on:
+  pull_request:
+    types: [opened, synchronize, ready_for_review]
+
+# A new push supersedes the review in flight. One live review per PR.
+concurrency:
+  group: pr-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  review:
+    name: Claude Code review (advisory)
+    # Review needs the diff, not Xcode, so this runs on Linux and costs
+    # minutes, not macOS minutes.
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    if: >-
+      github.event.pull_request.draft == false &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # The hook script needs to be executable on the runner too: the same
+      # PreToolUse guard that stops a laptop edit stops the reviewer.
+      #
+      # A fresh runner has never "trusted" this checkout, and an untrusted
+      # workspace has its checked-in permission rules ignored (hooks still
+      # run). Writing the trust flag for the workspace path is what an
+      # interactive session would have done by accepting the dialog.
+      - name: Install Claude Code
+        run: |
+          npm install -g @anthropic-ai/claude-code@2.1.289
+          chmod +x .claude/hooks/guard-critical-paths.sh
+          claude --version
+          cfg="$HOME/.claude.json"
+          [ -f "$cfg" ] || echo '{}' > "$cfg"
+          jq --arg p "$GITHUB_WORKSPACE" '.projects[$p].hasTrustDialogAccepted = true' "$cfg" > "$cfg.tmp" && mv "$cfg.tmp" "$cfg"
+
+      - name: Review
+        id: review
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_CI_KEY }}
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          set +e
+          claude -p "/review-pr $PR" \
+            --output-format json \
+            --json-schema "$(cat .claude/skills/review-pr/verdict.schema.json)" \
+            --permission-mode dontAsk \
+            --allowedTools "Read,Grep,Glob,Bash(git diff:*),Bash(git log:*),Bash(gh pr view:*),Bash(gh pr diff:*)" \
+            --append-system-prompt "You are reviewing pull request #$PR. Base branch: ${{ github.base_ref }}." \
+            --max-turns 40 \
+            --max-budget-usd 3 \
+            --no-session-persistence \
+            --model claude-opus-5 \
+            > review.json
+          echo "exit=$?" >> "$GITHUB_OUTPUT"
+          set -e
+          echo "### Claude review run" >> "$GITHUB_STEP_SUMMARY"
+          jq -r '"- turns: \(.num_turns // "n/a")\n- cost (USD): \(.total_cost_usd // "n/a")"' review.json >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true
+
+      - name: Publish verdict as a PR comment
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          REVIEW_EXIT: ${{ steps.review.outputs.exit }}
+        run: .github/scripts/publish-review.sh review.json
+
+      - name: Keep the raw verdict
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: claude-review-${{ github.event.pull_request.number }}-${{ github.run_attempt }}
+          path: review.json
+          retention-days: 7

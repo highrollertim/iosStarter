@@ -23,8 +23,13 @@ timeline.xctimeline
 *.xcresult
 
 # Local agent/tool state (lock files, transcripts). Machine-specific, and
-# nothing in the build or the test suite reads it.
-.claude/
+# nothing in the build or the test suite reads it. The harness pieces are
+# the exception: the checked-in settings, the hook, and the skills are what
+# the PR review workflow runs, so they are tracked.
+.claude/*
+!.claude/settings.json
+!.claude/hooks/
+!.claude/skills/
 
 # Swift Package Manager
 .build/
