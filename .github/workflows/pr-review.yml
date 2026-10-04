@@ -50,11 +50,19 @@ jobs:
 
       # The hook script needs to be executable on the runner too: the same
       # PreToolUse guard that stops a laptop edit stops the reviewer.
+      #
+      # A fresh runner has never "trusted" this checkout, and an untrusted
+      # workspace has its checked-in permission rules ignored (hooks still
+      # run). Writing the trust flag for the workspace path is what an
+      # interactive session would have done by accepting the dialog.
       - name: Install Claude Code
         run: |
           npm install -g @anthropic-ai/claude-code@2.1.289
           chmod +x .claude/hooks/guard-critical-paths.sh
           claude --version
+          cfg="$HOME/.claude.json"
+          [ -f "$cfg" ] || echo '{}' > "$cfg"
+          jq --arg p "$GITHUB_WORKSPACE" '.projects[$p].hasTrustDialogAccepted = true' "$cfg" > "$cfg.tmp" && mv "$cfg.tmp" "$cfg"
 
       - name: Review
         id: review
