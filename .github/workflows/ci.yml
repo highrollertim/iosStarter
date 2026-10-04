@@ -15,6 +15,16 @@ on:
     branches: [main]
   pull_request:
 
+# One live run per pull request. A new push supersedes the run in flight,
+# which otherwise keeps three macOS jobs busy producing a result nobody will
+# read. That matters more than it sounds: hosted macOS allows five concurrent
+# jobs, this workflow uses three per run, and two stale runs are enough to
+# queue the one that counts. On `main` the group is the ref, so merges still
+# run to completion in order.
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 # `DEVELOPER_DIR` is set once per job rather than shelling out to
 # `xcode-select` in each. `sudo xcode-select -s` mutates the runner
 # system-wide; the environment variable is scoped to the job, needs no `sudo`,

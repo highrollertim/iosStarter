@@ -29,10 +29,26 @@ import XCTest
 /// the German pass a localization check rather than a metadata permutation.
 /// So these screenshots span both, and this class is the app's launch smoke
 /// test and its most direct German one at the same time.
+///
+/// The matrix is **off by default**, and the reason is measured rather than
+/// assumed. With it on, `testLaunch` is sixteen full launch-and-terminate
+/// cycles per language, which was thirteen of a thirty-two-minute UI job on a
+/// hosted macOS runner, and the one test that failed there: `app.launch()`
+/// first terminates the previous instance, a loaded shared simulator took
+/// longer than XCTest's sixty-second allowance to do it, and one configuration
+/// out of sixteen reported "Failed to terminate" while the other fifteen and
+/// the whole German pass were green. A smoke test that is the most expensive
+/// and the least reliable test in the suite is the wrong shape for a gate.
+///
+/// What the matrix proved is still proved: the app launches in both
+/// languages because the test plan runs this class twice, and the
+/// appearance and orientation screenshots are a nice-to-have the result
+/// bundle can carry when someone asks for them. Flip the override to `true`
+/// for a local run when you want the full gallery; leave it `false` for CI.
 final class LaunchTests: XCTestCase {
 
     override class var runsForEachTargetApplicationUIConfiguration: Bool {
-        true
+        false
     }
 
     override func setUpWithError() throws {
