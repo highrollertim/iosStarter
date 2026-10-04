@@ -34,14 +34,23 @@ struct RepoDetailView: View {
         !matches.isEmpty
     }
 
-    /// Shown in the Language row when GitHub reports no primary language, so
-    /// the Stats section keeps the same four rows for every repository instead
-    /// of silently dropping one.
-    private var languageFallback: String {
-        String(
-            localized: "Not specified",
-            comment: "Value shown in the detail screen's Language row when GitHub reports no primary language for the repository."
-        )
+    /// The Language row's value: the repository's primary language, or a
+    /// localized placeholder when GitHub reports none, so the Stats section
+    /// keeps the same four rows for every repository instead of silently
+    /// dropping one.
+    ///
+    /// `nonisolated static`, and reachable from tests, for the same reason
+    /// `RepoRowView.accessibilityDescription(for:)` is: the placeholder is a
+    /// catalog entry in two languages, and nothing fails to compile if the
+    /// German unit is dropped or mistranslated. `testExample.xctestplan` runs
+    /// the unit suite under both languages, and a static function is the only
+    /// shape a test can call from either without instantiating the view.
+    nonisolated static func languageValue(for repo: Repo) -> String {
+        repo.language
+            ?? String(
+                localized: "Not specified",
+                comment: "Value shown in the detail screen's Language row when GitHub reports no primary language for the repository."
+            )
     }
 
     var body: some View {
@@ -54,7 +63,7 @@ struct RepoDetailView: View {
             Section("Stats") {
                 LabeledContent("Stars", value: repo.stargazersCount.formatted())
                 LabeledContent("Forks", value: repo.forksCount.formatted())
-                LabeledContent("Language", value: repo.language ?? languageFallback)
+                LabeledContent("Language", value: Self.languageValue(for: repo))
                 LabeledContent("Owner", value: repo.ownerLogin)
             }
             // `webURL` is the model's answer to "is this link one we are
