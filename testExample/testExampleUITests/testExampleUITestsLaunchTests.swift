@@ -33,15 +33,19 @@ import XCTest
 ///
 /// The matrix is **off by default**, and the reason is measured rather than
 /// assumed, in the same units as above: eight configurations per language,
-/// so sixteen launch-and-terminate cycles of `testLaunch` across the plan's
-/// two configurations. With it on, this class was thirteen minutes of a
-/// thirty-two-minute UI job on a hosted macOS runner, and the one test that
-/// failed there: `app.launch()` first terminates the previous instance, a
-/// loaded shared simulator took longer than XCTest's sixty-second allowance
-/// to do it, and one of the eight English configurations reported "Failed to
-/// terminate" while the other seven and the whole German pass were green. A
-/// smoke test that is the most expensive and the least reliable test in the
-/// suite is the wrong shape for a gate.
+/// so sixteen across the plan's two configurations. The override is
+/// class-level, so it multiplied both tests here: sixteen launch-and-
+/// terminate cycles of `testLaunch`, and sixteen runs of
+/// `testLaunchPerformance`, each of which is `measure`'s five iterations
+/// plus a warm-up, so roughly a hundred further launches. With it on, this
+/// class was thirteen minutes of a thirty-two-minute UI job on a hosted
+/// macOS runner, and the one test that failed there: `app.launch()` first
+/// terminates the previous instance, a loaded shared simulator took longer
+/// than XCTest's sixty-second allowance to do it, and one of the eight
+/// English `testLaunch` configurations reported "Failed to terminate" while
+/// the other seven and the whole German pass were green. A smoke test that
+/// is the most expensive and the least reliable test in the suite is the
+/// wrong shape for a gate.
 ///
 /// What the matrix proved is still proved: the app launches in both
 /// languages because the test plan runs this class twice, and the

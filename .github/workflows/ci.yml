@@ -21,13 +21,15 @@ on:
 # jobs, this workflow uses three per run, and two stale runs are enough to
 # queue the one that counts.
 #
-# Cancellation is scoped to pull requests on purpose. Sharing a group is not
-# the same as being exempt from it: with a bare `true`, two merges landing
-# close together would cancel the first one's run and leave that commit on
-# `main` with no result at all. On `main` the group still serialises runs;
-# it just lets each one finish.
+# Off a pull request the group is the commit itself, so runs on `main` never
+# share a group and never queue behind each other. That is the only shape
+# that keeps every merge's result: a shared group would cancel the first
+# run with `cancel-in-progress`, and even without it GitHub keeps at most
+# one *pending* run per group, so three merges landing close together would
+# drop the middle one while it waited. `cancel-in-progress` is scoped to
+# pull requests for the same reason; on `main` there is nothing to cancel.
 concurrency:
-  group: ci-${{ github.event.pull_request.number || github.ref }}
+  group: ci-${{ github.event.pull_request.number || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 # `DEVELOPER_DIR` is set once per job rather than shelling out to
@@ -76,10 +78,10 @@ jobs:
     runs-on: macos-26
     # Not `continue-on-error`: a UI suite whose failures are advisory stops
     # being a suite. The timeout is the safety valve instead — the suite takes
-    # roughly twelve minutes across both configurations on a local machine, so
-    # thirty is a hang, not a slow day. (The same hedged figure is in the
-    # README and in the guide's §2; if one of the three ever moves, move all
-    # three.)
+    # roughly six minutes across both configurations on a local machine and
+    # has taken about twenty on a cold hosted runner, so forty-five is a hang,
+    # not a slow day. (The same hedged figure is in the README and in the
+    # guide's §2; if one of the three ever moves, move all three.)
     timeout-minutes: 45
     env:
       DEVELOPER_DIR: /Applications/Xcode_26.2.0.app/Contents/Developer

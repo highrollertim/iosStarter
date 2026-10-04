@@ -98,9 +98,10 @@ configurations: English (`en`/`US`) and German (`de`/`DE`). So a plain
 `xcodebuild test` runs both languages, and the German pass is the app's
 localization check rather than something a maintainer has to remember. Budget
 roughly twice the wall-clock time you would expect: a full run lands around
-twelve minutes, nearly all of it the UI suite, and the unit suite on its own
-is a couple of minutes. (The guide's §2 and `ci.yml`'s timeout comment quote
-the same hedged figure; if one moves, move all three.)
+six minutes, most of it the UI suite, and the unit suite on its own is a
+couple of minutes. (The guide's §2 and `ci.yml`'s timeout comment quote the
+same hedged figure; if one moves, move all three. It was twelve before
+`LaunchTests` stopped repeating across the appearance-and-orientation matrix.)
 
 Some UI tests skip themselves under German, report the reason, and are
 expected rather than a failure. Six match strings **Apple** owns and
