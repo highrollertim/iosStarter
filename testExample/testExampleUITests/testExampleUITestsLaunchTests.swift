@@ -1,7 +1,8 @@
 import XCTest
 
-/// Smoke test: the app launches at all, on every UI-appearance configuration
-/// the suite runs under, and we keep a screenshot in the result bundle.
+/// Smoke test: the app launches at all, once per test-plan language, and we
+/// keep a screenshot in the result bundle. The appearance-and-orientation
+/// matrix described below is opt-in.
 ///
 /// Two independent multipliers apply here, and they are worth telling apart —
 /// the result bundle is confusing until you do.
@@ -31,14 +32,16 @@ import XCTest
 /// test and its most direct German one at the same time.
 ///
 /// The matrix is **off by default**, and the reason is measured rather than
-/// assumed. With it on, `testLaunch` is sixteen full launch-and-terminate
-/// cycles per language, which was thirteen of a thirty-two-minute UI job on a
-/// hosted macOS runner, and the one test that failed there: `app.launch()`
-/// first terminates the previous instance, a loaded shared simulator took
-/// longer than XCTest's sixty-second allowance to do it, and one configuration
-/// out of sixteen reported "Failed to terminate" while the other fifteen and
-/// the whole German pass were green. A smoke test that is the most expensive
-/// and the least reliable test in the suite is the wrong shape for a gate.
+/// assumed, in the same units as above: eight configurations per language,
+/// so sixteen launch-and-terminate cycles of `testLaunch` across the plan's
+/// two configurations. With it on, this class was thirteen minutes of a
+/// thirty-two-minute UI job on a hosted macOS runner, and the one test that
+/// failed there: `app.launch()` first terminates the previous instance, a
+/// loaded shared simulator took longer than XCTest's sixty-second allowance
+/// to do it, and one of the eight English configurations reported "Failed to
+/// terminate" while the other seven and the whole German pass were green. A
+/// smoke test that is the most expensive and the least reliable test in the
+/// suite is the wrong shape for a gate.
 ///
 /// What the matrix proved is still proved: the app launches in both
 /// languages because the test plan runs this class twice, and the
