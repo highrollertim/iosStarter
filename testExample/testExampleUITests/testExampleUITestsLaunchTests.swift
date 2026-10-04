@@ -50,12 +50,19 @@ import XCTest
 /// What the matrix proved is still proved: the app launches in both
 /// languages because the test plan runs this class twice, and the
 /// appearance and orientation screenshots are a nice-to-have the result
-/// bundle can carry when someone asks for them. Flip the override to `true`
-/// for a local run when you want the full gallery; leave it `false` for CI.
+/// bundle can carry when someone asks for them. The switch is an environment
+/// variable rather than an edit to this file, so turning the gallery on for
+/// one local run cannot be committed by accident:
+///
+///     TEST_RUNNER_UI_CONFIG_MATRIX=1 xcodebuild test ... -only-testing:testExampleUITests/LaunchTests
+///
+/// (`xcodebuild` forwards `TEST_RUNNER_`-prefixed variables to the test
+/// runner with the prefix stripped; the Xcode scheme editor's test
+/// environment does the same without the prefix.)
 final class LaunchTests: XCTestCase {
 
     override class var runsForEachTargetApplicationUIConfiguration: Bool {
-        false
+        ProcessInfo.processInfo.environment["UI_CONFIG_MATRIX"] == "1"
     }
 
     override func setUpWithError() throws {

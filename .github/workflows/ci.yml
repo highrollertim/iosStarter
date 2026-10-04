@@ -1,7 +1,7 @@
-# Written for a remote this repository does not yet have: there is no `git
-# remote` configured, so nothing has ever run this file. It is here so that
-# the first push to GitHub gets the same two commands the README documents,
-# rather than someone reinventing them under time pressure.
+# Runs the same two test commands the README documents, so a push to GitHub
+# and a local run agree on what "the suite" means. (It was written before the
+# repository had a remote; it has run on hosted macOS since, and the timeout
+# and concurrency comments below reason from what those runs showed.)
 #
 # The two test jobs run the shared `testExample` scheme, which means both run
 # `testExample.xctestplan` — English *and* German. That is deliberate: the
@@ -77,11 +77,12 @@ jobs:
     name: UI tests (English + German)
     runs-on: macos-26
     # Not `continue-on-error`: a UI suite whose failures are advisory stops
-    # being a suite. The timeout is the safety valve instead — the suite takes
-    # roughly six minutes across both configurations on a local machine and
-    # has taken about twenty on a cold hosted runner, so forty-five is a hang,
-    # not a slow day. (The same hedged figure is in the README and in the
-    # guide's §2; if one of the three ever moves, move all three.)
+    # being a suite. The timeout is the safety valve instead — the UI suite
+    # takes roughly four minutes across both configurations on a local machine
+    # (the full unit-plus-UI run is about six) and has taken about twenty on a
+    # cold hosted runner, so forty-five is a hang, not a slow day. (The same
+    # hedged figure is in the README, the guide's §2 and `CLAUDE.md`; if one
+    # of the four ever moves, move all four.)
     timeout-minutes: 45
     env:
       DEVELOPER_DIR: /Applications/Xcode_26.2.0.app/Contents/Developer
