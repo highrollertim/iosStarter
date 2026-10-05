@@ -52,8 +52,12 @@ jobs:
       # The harness the selector runs comes from the base branch. The diff it
       # reads still comes from the PR, through gh, so a PR that changes
       # `.claude/` is reviewed by the previous harness, which is the point.
+      # Tolerant on purpose: a base branch without the selector yet (the PR
+      # that introduces it, for one) is a reason to run everything, not a
+      # reason for a red job.
       - name: Harness from the base branch
         id: harness
+        continue-on-error: true
         env:
           BASE: ${{ github.base_ref }}
         run: |
@@ -67,9 +71,10 @@ jobs:
       # failed or budget-capped selection fails this job, and a job that
       # `needs` it is skipped, which is "run nothing", the one outcome the
       # design forbids. With it, the decide step sees the failure and asks
-      # for the full suite.
+      # for the full suite. A skipped step counts as a failure there too.
       - name: Ask which classes the diff needs
         id: select
+        if: steps.harness.outcome == 'success'
         continue-on-error: true
         uses: anthropics/claude-code-action@12310e4417c3473095c957cb311b3cf59a38d659 # v1.0.99
         env:
