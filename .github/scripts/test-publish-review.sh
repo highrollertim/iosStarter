@@ -17,6 +17,9 @@ if [ "$1" = "api" ] && [ "$2" = "--method" ] && [ "$3" = "POST" ]; then
   payload="$(cat)"
   n="$(jq '.comments | length' <<<"$payload" 2>/dev/null || echo 0)"
   ev="$(jq -r '.event' <<<"$payload")"
+  if [ "${REJECT_OTHER:-0}" = "1" ]; then
+    echo 'gh: Internal Server Error (HTTP 500)' >&2; exit 1
+  fi
   if [ "${REJECT_APPROVE:-0}" = "1" ] && [ "$ev" = "APPROVE" ]; then
     echo 'gh: Unprocessable Entity (HTTP 422): GitHub Actions is not permitted to approve pull requests.' >&2; exit 1
   fi
@@ -31,7 +34,9 @@ EOF
 chmod +x "$tmp/gh"
 export PATH="$tmp:$PATH" GITHUB_REPOSITORY=o/r PR=1 GH_TOKEN=x STUB_LOG="$tmp/log"
 
-run() { : > "$STUB_LOG"; REVIEW_CONCLUSION="$1" bash "$here/publish-review.sh" "$2" >/dev/null 2>&1; echo "exit=$? $(tr '\n' ' ' < "$STUB_LOG" | sed 's/ $//')"; }
+# The status is captured with `|| rc=$?` so the assertion never depends on
+# whether errexit reaches into a command substitution.
+run() { : > "$STUB_LOG"; local rc=0 log; REVIEW_CONCLUSION="$1" bash "$here/publish-review.sh" "$2" >/dev/null 2>&1 || rc=$?; log="$(tr '\n' ' ' < "$STUB_LOG" | sed 's/ $//')"; echo "exit=$rc${log:+ $log}"; }
 check() { if [ "$3" = "$2" ]; then echo "ok   $1"; else echo "FAIL $1"; echo "   expected: [$2]"; echo "   got:      [$3]"; fail=1; fi; }
 
 base='{"risk_tag_expected":"routine","summary":"s","tests":{"adequate":true,"gaps":[]},"findings":[]}'
@@ -47,5 +52,6 @@ check "did not run: failure"       "exit=1 COMMENT comments=0"         "$(run fa
 check "did not run: empty"         "exit=1 COMMENT comments=0"         "$(run success "$tmp/empty.json")"
 check "inline rejected falls back" "exit=0 REQUEST_CHANGES comments=0" "$(REJECT_INLINE=1 run success "$tmp/cr.json")"
 check "approval disabled: comment, green" "exit=0 COMMENT comments=0"  "$(REJECT_APPROVE=1 run success "$tmp/pass.json")"
+check "unrelated failure: red"     "exit=1"                            "$(REJECT_OTHER=1 run success "$tmp/pass.json")"
 
 exit $fail

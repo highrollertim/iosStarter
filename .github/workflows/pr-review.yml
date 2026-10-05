@@ -72,6 +72,13 @@ jobs:
           test -f "$schema_file" || { echo "base branch has no review skill; the review cannot run" >&2; exit 1; }
           schema="$(jq -c . "$schema_file")"
           echo "schema=$schema" >> "$GITHUB_OUTPUT"
+          # The publisher, which maps a verdict to APPROVE and holds the
+          # write-capable token, also comes from the base branch. The
+          # workflow file itself cannot: pull_request events always run the
+          # PR's copy, and that residual gap is stated in the brief.
+          mkdir -p base-scripts
+          git show "origin/$BASE:.github/scripts/publish-review.sh" > base-scripts/publish-review.sh
+          chmod +x base-scripts/publish-review.sh
 
       - name: Review
         id: review
@@ -102,8 +109,7 @@ jobs:
           VERDICT: ${{ steps.review.outputs.structured_output }}
         run: |
           printf '%s' "${VERDICT:-}" > verdict.json
-          chmod +x .github/scripts/publish-review.sh
-          .github/scripts/publish-review.sh verdict.json
+          base-scripts/publish-review.sh verdict.json
 
       - name: Keep the raw verdict
         if: ${{ !cancelled() }}

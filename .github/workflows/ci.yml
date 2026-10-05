@@ -182,4 +182,5 @@ jobs:
           chmod +x .github/scripts/*.sh
           .github/scripts/test-decide-ui-tests.sh
           .github/scripts/test-publish-review.sh
+          .github/scripts/test-check-ui-test-catalog.sh
           .github/scripts/check-ui-test-catalog.sh

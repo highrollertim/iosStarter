@@ -88,7 +88,7 @@ if url="$(submit "$event" "$body" "$comments")"; then
   echo "Submitted $event review ($(jq 'length' <<<"$comments") inline comments): $url"
 else
   err="$(cat "$errfile")"
-  if grep -qi -E 'not permitted|not allowed|can.t approve|cannot approve|approve' <<<"$err" && [ "$event" = "APPROVE" ]; then
+  if [ "$event" = "APPROVE" ] && grep -qi -E 'not permitted to (create and )?approve|not allowed to approve' <<<"$err"; then
     echo "Approval rejected by GitHub (the repository setting that lets Actions approve pull requests is off); submitting as a comment instead" >&2
     body="$(render_body "Claude review: pass (approval disabled)" "Verdict was **pass**, but this repository does not allow GitHub Actions to approve pull requests, so this is posted as a comment. Turn on \"Allow GitHub Actions to create and approve pull requests\" under Settings > Actions > General for the approval to count.")"
     url="$(submit COMMENT "$body" "$comments" || submit COMMENT "$body" "")"

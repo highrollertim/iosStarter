@@ -30,7 +30,9 @@ conclusion="${2:-failure}"
 ALLOWED="SearchFlowUITests FavoritesFlowUITests AccessibilityAuditUITests ScreenshotGalleryUITests LaunchTests"
 FLOOR="LaunchTests"
 
-one_line() { printf '%s' "$1" | tr -d '\000-\037\177' | head -c 300; }
+# No `head` in the pipeline: a reader that exits early turns a large input
+# into SIGPIPE, and under pipefail that would abort the script.
+one_line() { local s; s="$(printf '%s' "$1" | tr -d '\000-\037\177')"; printf '%s' "${s:0:300}"; }
 
 run_all=true
 reason=""
