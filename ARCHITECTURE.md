@@ -685,7 +685,11 @@ each through the test plan, in both languages — plus a third, advisory
 formatter job. It was written before the repository had a remote so the
 commands would not get reinvented, differently, by whoever first wired one up;
 it has run on hosted macOS since, and its timeout and concurrency comments
-reason from what those runs showed. Two of its steps are worth knowing about.
+reason from what those runs showed. Its UI job runs the full suite on every
+merge to `main`; on a pull request, `pr-ui-tests.yml` runs only the classes
+Claude selects from the diff, `LaunchTests` always among them, and
+`pr-review.yml` has Claude review the diff and submit a real pull request
+review. Two of `ci.yml`'s steps are worth knowing about.
 The software keyboard never appears while the simulator is paired with a
 hardware one, and `SearchScreen.search(for:)` waits
 on it, so the UI job turns the pairing off. And that job writes a result

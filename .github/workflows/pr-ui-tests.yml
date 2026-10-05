@@ -1,0 +1,176 @@
+# UI tests on a pull request: run the classes the diff needs, not all of them.
+#
+# This is Tier 2 from the harness design. A first job asks Claude, through
+# anthropics/claude-code-action and the repo's `/select-ui-tests` skill, which
+# UI test classes the changed files touch. The answer is validated against
+# `selection.schema.json`, whose enum is the only way a class name can reach
+# the xcodebuild command line. The second job runs exactly those classes on a
+# macOS runner.
+#
+# Two rules are enforced by the workflow, not by the model:
+#   - `LaunchTests` always runs. It is the floor.
+#   - If selection fails, times out, or returns nothing usable, everything
+#     runs. A wrong selection fails open to the full suite, never to silence.
+#
+# Full regression still runs on every merge to `main` in `ci.yml`, which is
+# what catches a wrong selection before a release. Selection picks are kept
+# as an artifact so recall can be measured against those full runs.
+name: PR UI tests
+
+on:
+  pull_request:
+    types: [opened, synchronize, ready_for_review]
+
+concurrency:
+  group: pr-ui-tests-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  select:
+    name: Select UI tests from the diff
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    if: >-
+      github.event.pull_request.draft == false &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    outputs:
+      run_all: ${{ steps.decide.outputs.run_all }}
+      only_testing: ${{ steps.decide.outputs.only_testing }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Prepare the harness
+        id: harness
+        run: |
+          chmod +x .claude/hooks/guard-critical-paths.sh
+          echo "schema=$(jq -c . .claude/skills/select-ui-tests/selection.schema.json)" >> "$GITHUB_OUTPUT"
+
+      - name: Ask which classes the diff needs
+        id: select
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_CI_KEY }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          prompt: "/select-ui-tests ${{ github.event.pull_request.number }}"
+          claude_args: >-
+            --json-schema '${{ steps.harness.outputs.schema }}'
+            --permission-mode dontAsk
+            --allowedTools "Read,Grep,Glob,Bash(gh pr diff:*),Bash(gh pr view:*)"
+            --max-turns 15
+            --max-budget-usd 1
+            --model claude-opus-5
+
+      # Apply the floor and the fallback, and build the -only-testing flags
+      # from the schema's enum only. The selection JSON is model-authored, so
+      # it arrives through an environment variable, never interpolated.
+      - name: Decide what runs
+        id: decide
+        if: ${{ !cancelled() }}
+        env:
+          SELECTION: ${{ steps.select.outputs.structured_output }}
+          CONCLUSION: ${{ steps.select.outputs.conclusion }}
+        run: |
+          allowed="SearchFlowUITests FavoritesFlowUITests AccessibilityAuditUITests ScreenshotGalleryUITests LaunchTests"
+          floor="LaunchTests"
+          printf '%s' "${SELECTION:-}" > selection.json
+
+          if [ "$CONCLUSION" != "success" ] || ! jq -e '.classes' selection.json >/dev/null 2>&1; then
+            run_all=true
+            reason="selection did not produce a valid answer (conclusion: ${CONCLUSION:-none}); running the full suite"
+          elif [ "$(jq -r '.run_all' selection.json)" = "true" ]; then
+            run_all=true
+            reason="$(jq -r '.summary' selection.json)"
+          else
+            run_all=false
+            reason="$(jq -r '.summary' selection.json)"
+          fi
+
+          flags=""
+          if [ "$run_all" = "false" ]; then
+            picked="$( { jq -r '.classes[]' selection.json; echo "$floor"; } | sort -u )"
+            for c in $picked; do
+              case " $allowed " in
+                *" $c "*) flags="$flags -only-testing:testExampleUITests/$c" ;;
+                *) echo "ignoring unknown class '$c'" >&2 ;;
+              esac
+            done
+          fi
+
+          echo "run_all=$run_all" >> "$GITHUB_OUTPUT"
+          echo "only_testing=$flags" >> "$GITHUB_OUTPUT"
+
+          {
+            echo "### UI test selection"
+            echo
+            echo "**Run everything:** $run_all  "
+            echo "**Reason:** $reason"
+            if [ "$run_all" = "false" ]; then
+              echo
+              echo "Classes:"
+              for c in $picked; do echo "- $c"; done
+              echo
+              echo "Why:"
+              jq -r '.reasons[]? | "- " + .' selection.json
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Keep the selection
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-test-selection-${{ github.event.pull_request.number }}-${{ github.run_attempt }}
+          path: selection.json
+          retention-days: 30
+          if-no-files-found: ignore
+
+  ui-tests:
+    name: UI tests (selected, English + German)
+    needs: select
+    runs-on: macos-26
+    timeout-minutes: 45
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.2.0.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@v4
+      - name: Show the available toolchains
+        run: |
+          ls -d /Applications/Xcode*.app
+          xcodebuild -version
+          xcrun swiftc --version
+      - name: Disconnect the simulator's hardware keyboard
+        run: defaults write com.apple.iphonesimulator ConnectHardwareKeyboard -bool false
+      - name: Test
+        working-directory: testExample
+        env:
+          RUN_ALL: ${{ needs.select.outputs.run_all }}
+          ONLY_TESTING: ${{ needs.select.outputs.only_testing }}
+        run: |
+          if [ "$RUN_ALL" = "true" ]; then
+            scope="-only-testing:testExampleUITests"
+          else
+            scope="$ONLY_TESTING"
+          fi
+          echo "xcodebuild scope: $scope"
+          # shellcheck disable=SC2086
+          xcodebuild test \
+            -project testExample.xcodeproj \
+            -scheme testExample \
+            -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \
+            -resultBundlePath UITests.xcresult \
+            $scope
+      - name: Archive the result bundle
+        if: always()
+        run: tar -czf UITests.xcresult.tgz -C testExample UITests.xcresult
+      - name: Upload the result bundle
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr-ui-tests-xcresult
+          path: UITests.xcresult.tgz
+          retention-days: 7

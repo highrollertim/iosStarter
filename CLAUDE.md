@@ -30,8 +30,9 @@ testExample/testExample/            app target
 testExample/testExampleTests/        Swift Testing unit suite (@Suite, @Test, #expect)
 testExample/testExampleUITests/      XCTest UI suite; Screens/ are page objects, Support/ has launch helpers
 testExample/testExample.xctestplan   runs every suite twice: English and German
-.github/workflows/ci.yml             unit, UI, and advisory swift-format on macos-26
-.github/workflows/pr-review.yml      headless Claude Code review on every PR
+.github/workflows/ci.yml             unit tests and advisory swift-format on every PR; full UI suite on main
+.github/workflows/pr-review.yml      Claude Code review on every PR via claude-code-action, submitted as a PR review
+.github/workflows/pr-ui-tests.yml    Claude picks the UI test classes the diff needs; LaunchTests always runs
 ```
 
 ## Commands

@@ -75,6 +75,12 @@ jobs:
 
   ui-tests:
     name: UI tests (English + German)
+    # The full UI suite runs on `main` only. On a pull request the
+    # `pr-ui-tests.yml` workflow runs the classes the diff selects, with
+    # `LaunchTests` as the floor and "run everything" as the fallback when
+    # selection cannot decide. Full regression on every merge is what catches
+    # a wrong selection before a release, which is why this job stays.
+    if: github.event_name == 'push'
     runs-on: macos-26
     # Not `continue-on-error`: a UI suite whose failures are advisory stops
     # being a suite. The timeout is the safety valve instead — the UI suite
