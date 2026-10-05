@@ -86,6 +86,12 @@ jobs:
             echo "this PR adds or removes UI test files; the full suite will run" >&2
             exit 1
           fi
+          # A class renamed inside an existing file is the same problem:
+          # any added or removed XCTestCase declaration line runs everything.
+          if git diff "origin/$BASE...HEAD" -- testExample/testExampleUITests | grep -qE '^[+-][^+-].*class[[:space:]]+[A-Za-z0-9_]+[[:space:]]*:[[:space:]]*XCTestCase'; then
+            echo "this PR adds, removes, or renames a UI test class; the full suite will run" >&2
+            exit 1
+          fi
           schema_file=.claude/skills/select-ui-tests/selection.schema.json
           test -f "$schema_file" || { echo "base branch has no selector skill; the full suite will run" >&2; exit 1; }
           schema="$(jq -c . "$schema_file")"

@@ -40,6 +40,7 @@ submit() { # $1 event, $2 body, $3 comments json array or empty -> prints url, o
 
 if [ "$conclusion" != "success" ] || ! jq -e '.verdict' "$file" >/dev/null 2>&1; then
   body="$(printf '## Claude review: did not run\n\nThe review step finished with conclusion `%s` and no valid verdict. This is not an approval. Re-run the job, or review by hand.\n' "$conclusion")"
+  dismiss_prior_approvals "Superseded: a later review run did not complete."
   submit COMMENT "$body" "" >/dev/null
   echo "Posted did-not-run review; failing the step so the check cannot read as a pass" >&2
   exit 1
@@ -75,11 +76,28 @@ render_body() { # $1 title, $2 optional preface line
     ] | join("\n")' "$file"
 }
 
-body="$(render_body "$title")"
 # GitHub caps a review body at 65536 characters. A verdict with many long
 # findings is truncated with a note rather than rejected.
-if [ "${#body}" -gt 60000 ]; then
-  body="${body:0:60000}"$'\n\n'"_Truncated: the full verdict is in the workflow artifact._"
+capped() { local b="$1"; if [ "${#b}" -gt 60000 ]; then b="${b:0:60000}"$'\n\n'"_Truncated: the full verdict is in the workflow artifact._"; fi; printf '%s' "$b"; }
+
+# GitHub keeps one review state per reviewer, and a COMMENT does not change
+# it. A standing APPROVE from this account must be dismissed before any
+# verdict that is not a pass, or a later did-not-run or needs-human run
+# leaves the old approval satisfying "require N approvals". Branch protection's
+# "dismiss stale approvals on push" is the belt; this is the suspenders.
+dismiss_prior_approvals() { # $1 reason
+  local me ids id
+  me="$(gh api user --jq .login 2>/dev/null || echo "github-actions[bot]")"
+  ids="$(gh api "$api" --paginate --jq ".[] | select(.state == \"APPROVED\" and .user.login == \"$me\") | .id" 2>/dev/null || true)"
+  for id in $ids; do
+    gh api --method PUT "$api/$id/dismissals" -f message="$1" >/dev/null 2>&1 && echo "Dismissed prior approval $id: $1" || echo "warning: could not dismiss prior approval $id" >&2
+  done
+}
+
+body="$(capped "$(render_body "$title")")"
+
+if [ "$event" != "APPROVE" ]; then
+  dismiss_prior_approvals "Superseded by a newer review: $verdict."
 fi
 
 # Inline comments for findings that name a line.
@@ -95,7 +113,7 @@ else
   err="$(cat "$errfile")"
   if [ "$event" = "APPROVE" ] && grep -qi -E 'not permitted to (create and )?approve|not allowed to approve' <<<"$err"; then
     echo "Approval rejected by GitHub (the repository setting that lets Actions approve pull requests is off); submitting as a comment instead" >&2
-    body="$(render_body "Claude review: pass (approval disabled)" "Verdict was **pass**, but this repository does not allow GitHub Actions to approve pull requests, so this is posted as a comment. Turn on \"Allow GitHub Actions to create and approve pull requests\" under Settings > Actions > General for the approval to count.")"
+    body="$(capped "$(render_body "Claude review: pass (approval disabled)" "Verdict was **pass**, but this repository does not allow GitHub Actions to approve pull requests, so this is posted as a comment. Turn on \"Allow GitHub Actions to create and approve pull requests\" under Settings > Actions > General for the approval to count.")")"
     # Status captured explicitly: this is the pass path, and it must stay
     # green even if both comment attempts fail on a transient error.
     url="$(submit COMMENT "$body" "$comments" || submit COMMENT "$body" "" || true)"

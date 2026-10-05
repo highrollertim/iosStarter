@@ -49,6 +49,7 @@ else
   run_all=false
   reason="$(one_line "$(jq -r '.summary // "selected from the diff"' "$file")")"
   picked="$( { jq -r '.classes[]' "$file"; echo "$FLOOR"; } | sort -u )"
+  set -f  # word-split only; a model-supplied '*' must not expand to filenames
   for c in $picked; do
     case " $ALLOWED " in
       *" $c "*)
@@ -58,6 +59,7 @@ else
       *) echo "ignoring unknown class '$(one_line "$c")'" >&2 ;;
     esac
   done
+  set +f
 fi
 
 printf 'run_all=%s\n' "$run_all"

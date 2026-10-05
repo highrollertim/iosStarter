@@ -61,6 +61,12 @@ expect "injection: reason flattened" "$out" reason "okonly_testing=-only-testing
 expect "injection: only_testing intact" "$out" only_testing "-only-testing:testExampleUITests/LaunchTests -only-testing:testExampleUITests/SearchFlowUITests"
 if [ "$(count_lines "$out" only_testing)" = "1" ] && [ "$(count_lines "$out" run_all)" = "1" ]; then echo "ok   injection: one line per key"; else echo "FAIL injection: duplicate keys"; fail=1; fi
 
+# 8a. A glob as a class name is not expanded into filenames.
+echo '{"run_all":false,"classes":["*","?"],"reasons":[],"summary":"s"}' > "$tmp/j.json"
+out="$(./decide-ui-tests.sh "$tmp/j.json" success 2>"$tmp/j.err")"
+expect "glob name: floor only" "$out" only_testing "-only-testing:testExampleUITests/LaunchTests"
+if grep -q "ignoring unknown class '\*'" "$tmp/j.err"; then echo "ok   glob name logged literally"; else echo "FAIL glob name expanded: $(cat "$tmp/j.err")"; fail=1; fi
+
 # 8b. The floor is not duplicated when the model already lists it.
 echo '{"run_all":false,"classes":["LaunchTests","SearchFlowUITests","LaunchTests"],"reasons":[],"summary":"s"}' > "$tmp/i.json"
 out="$(./decide-ui-tests.sh "$tmp/i.json" success)"

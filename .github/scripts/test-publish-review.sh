@@ -32,6 +32,13 @@ fi
 if [ "$1" = "pr" ] && [ "$2" = "edit" ]; then
   echo "label $5" >> "$STUB_LOG"; exit 0
 fi
+if [ "$1" = "api" ] && [ "$2" = "user" ]; then echo "github-actions[bot]"; exit 0; fi
+if [ "$1" = "api" ] && [ "$2" = "--method" ] && [ "$3" = "PUT" ] && [[ "$4" == */dismissals ]]; then
+  echo "dismiss ${4##*/reviews/}" | sed 's|/dismissals||' >> "$STUB_LOG"; exit 0
+fi
+if [ "$1" = "api" ] && [[ "$2" == */reviews ]]; then
+  if [ "${PRIOR_APPROVAL:-0}" = "1" ]; then echo "77"; fi; exit 0
+fi
 exit 0
 EOF
 chmod +x "$tmp/gh"
@@ -58,5 +65,9 @@ check "did not run: empty"         "exit=1 COMMENT comments=0"         "$(run su
 check "inline rejected falls back" "exit=0 REQUEST_CHANGES comments=0" "$(REJECT_INLINE=1 run success "$tmp/cr.json")"
 check "approval disabled: comment, green" "exit=0 COMMENT comments=0"  "$(REJECT_APPROVE=1 run success "$tmp/pass.json")"
 check "unrelated failure: red"     "exit=1"                            "$(REJECT_OTHER=1 run success "$tmp/pass.json")"
+check "prior approval kept on pass"          "exit=0 APPROVE comments=0"                         "$(PRIOR_APPROVAL=1 run success "$tmp/pass.json")"
+check "prior approval dismissed on changes"  "exit=0 dismiss 77 REQUEST_CHANGES comments=1"      "$(PRIOR_APPROVAL=1 run success "$tmp/cr.json")"
+check "prior approval dismissed on needs human" "exit=0 dismiss 77 COMMENT comments=0 label needs-human-review" "$(PRIOR_APPROVAL=1 run success "$tmp/nh.json")"
+check "prior approval dismissed on did not run" "exit=1 dismiss 77 COMMENT comments=0"           "$(PRIOR_APPROVAL=1 run failure "$tmp/pass.json")"
 
 exit $fail
