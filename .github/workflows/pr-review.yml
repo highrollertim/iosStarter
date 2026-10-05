@@ -68,7 +68,7 @@ jobs:
 
       - name: Review
         id: review
-        uses: anthropics/claude-code-action@12310e4417c3473095c957cb311b3cf59a38d659 # v1.0.99
+        uses: anthropics/claude-code-action@cab360f6565aa35a51d6ce9e43f1f4287c0a32ea # v1.0.241
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
