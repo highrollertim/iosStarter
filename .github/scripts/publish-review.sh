@@ -38,6 +38,25 @@ submit() { # $1 event, $2 body, $3 comments json array or empty -> prints url, o
   gh api --method POST "$api" --input - <<<"$payload" --jq '.html_url' 2>"$errfile"
 }
 
+# GitHub caps a review body at 65536 characters. A verdict with many long
+# findings is truncated with a note rather than rejected.
+capped() { local b="$1"; if [ "${#b}" -gt 60000 ]; then b="${b:0:60000}"$'\n\n'"_Truncated: the full verdict is in the workflow artifact._"; fi; printf '%s' "$b"; }
+
+# GitHub keeps one review state per reviewer, and a COMMENT does not change
+# it. A standing APPROVE from this account must be dismissed before any
+# verdict that is not a pass, or a later did-not-run or needs-human run
+# leaves the old approval satisfying "require N approvals". Branch protection's
+# "dismiss stale approvals on push" is the belt; this is the suspenders.
+dismiss_prior_approvals() { # $1 reason
+  local me ids id
+  me="$(gh api user --jq .login 2>/dev/null || echo "github-actions[bot]")"
+  ids="$(gh api "$api" --paginate --jq ".[] | select(.state == \"APPROVED\" and .user.login == \"$me\") | .id" 2>/dev/null || true)"
+  for id in $ids; do
+    gh api --method PUT "$api/$id/dismissals" -f message="$1" >/dev/null 2>&1 && echo "Dismissed prior approval $id: $1" || echo "warning: could not dismiss prior approval $id" >&2
+  done
+}
+
+
 if [ "$conclusion" != "success" ] || ! jq -e '.verdict' "$file" >/dev/null 2>&1; then
   body="$(printf '## Claude review: did not run\n\nThe review step finished with conclusion `%s` and no valid verdict. This is not an approval. Re-run the job, or review by hand.\n' "$conclusion")"
   dismiss_prior_approvals "Superseded: a later review run did not complete."
@@ -74,24 +93,6 @@ render_body() { # $1 title, $2 optional preface line
       "",
       "<sub>Review by Claude Code via anthropics/claude-code-action using `.claude/skills/review-pr`. Run `/review-pr <number>` locally to reproduce.</sub>"
     ] | join("\n")' "$file"
-}
-
-# GitHub caps a review body at 65536 characters. A verdict with many long
-# findings is truncated with a note rather than rejected.
-capped() { local b="$1"; if [ "${#b}" -gt 60000 ]; then b="${b:0:60000}"$'\n\n'"_Truncated: the full verdict is in the workflow artifact._"; fi; printf '%s' "$b"; }
-
-# GitHub keeps one review state per reviewer, and a COMMENT does not change
-# it. A standing APPROVE from this account must be dismissed before any
-# verdict that is not a pass, or a later did-not-run or needs-human run
-# leaves the old approval satisfying "require N approvals". Branch protection's
-# "dismiss stale approvals on push" is the belt; this is the suspenders.
-dismiss_prior_approvals() { # $1 reason
-  local me ids id
-  me="$(gh api user --jq .login 2>/dev/null || echo "github-actions[bot]")"
-  ids="$(gh api "$api" --paginate --jq ".[] | select(.state == \"APPROVED\" and .user.login == \"$me\") | .id" 2>/dev/null || true)"
-  for id in $ids; do
-    gh api --method PUT "$api/$id/dismissals" -f message="$1" >/dev/null 2>&1 && echo "Dismissed prior approval $id: $1" || echo "warning: could not dismiss prior approval $id" >&2
-  done
 }
 
 body="$(capped "$(render_body "$title")")"
