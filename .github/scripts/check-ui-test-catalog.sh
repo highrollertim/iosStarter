@@ -6,7 +6,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 
-actual="$(grep -h -E '^(final )?class [A-Za-z0-9_]+: XCTestCase' testExample/testExampleUITests/*.swift | sed -E 's/^(final )?class ([A-Za-z0-9_]+):.*/\2/' | sort)"
+actual="$(find testExample/testExampleUITests -name '*.swift' -print0 | xargs -0 grep -h -E '^(final )?class [A-Za-z0-9_]+: XCTestCase' | sed -E 's/^(final )?class ([A-Za-z0-9_]+):.*/\2/' | sort)"
 schema="$(jq -r '.properties.classes.items.enum[]' .claude/skills/select-ui-tests/selection.schema.json | sort)"
 allow="$(sed -n -E 's/^ALLOWED="([^"]+)"$/\1/p' .github/scripts/decide-ui-tests.sh | tr ' ' '\n' | sort)"
 catalog="$(grep -o -E '^\| `[A-Za-z0-9_]+UITests`|^\| `LaunchTests`' .claude/skills/select-ui-tests/SKILL.md | sed -E 's/^\| `([A-Za-z0-9_]+)`/\1/' | sort)"

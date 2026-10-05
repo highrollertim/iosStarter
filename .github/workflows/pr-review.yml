@@ -61,10 +61,17 @@ jobs:
           BASE: ${{ github.base_ref }}
         run: |
           git fetch --no-tags origin "$BASE"
+          # Keep the PR's own harness readable as data at ./pr-harness, so a
+          # PR that changes `.claude/` can still be reviewed in full while the
+          # reviewer itself runs from the base branch.
+          rm -rf pr-harness && cp -R .claude pr-harness
           rm -rf .claude
           git checkout "origin/$BASE" -- .claude
           chmod +x .claude/hooks/guard-critical-paths.sh
-          echo "schema=$(jq -c . .claude/skills/review-pr/verdict.schema.json)" >> "$GITHUB_OUTPUT"
+          schema_file=.claude/skills/review-pr/verdict.schema.json
+          test -f "$schema_file" || { echo "base branch has no review skill; the review cannot run" >&2; exit 1; }
+          schema="$(jq -c . "$schema_file")"
+          echo "schema=$schema" >> "$GITHUB_OUTPUT"
 
       - name: Review
         id: review
@@ -79,7 +86,7 @@ jobs:
             --json-schema '${{ steps.harness.outputs.schema }}'
             --permission-mode dontAsk
             --allowedTools "Read,Grep,Glob,Bash(git diff:*),Bash(git log:*),Bash(gh pr view:*),Bash(gh pr diff:*)"
-            --append-system-prompt "You are reviewing pull request #${{ github.event.pull_request.number }}. Base branch: ${{ github.base_ref }}."
+            --append-system-prompt "You are reviewing pull request #${{ github.event.pull_request.number }}. Base branch: ${{ github.base_ref }}. The .claude/ directory in the workspace is the base branch's harness; the pull request's own .claude/ is at ./pr-harness/ for you to read as data."
             --max-turns 40
             --max-budget-usd 3
             --model claude-opus-5

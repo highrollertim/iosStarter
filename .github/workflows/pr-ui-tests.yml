@@ -62,10 +62,14 @@ jobs:
           BASE: ${{ github.base_ref }}
         run: |
           git fetch --no-tags origin "$BASE"
+          rm -rf pr-harness && cp -R .claude pr-harness   # the PR's own harness, readable as data
           rm -rf .claude
           git checkout "origin/$BASE" -- .claude
           chmod +x .claude/hooks/guard-critical-paths.sh
-          echo "schema=$(jq -c . .claude/skills/select-ui-tests/selection.schema.json)" >> "$GITHUB_OUTPUT"
+          schema_file=.claude/skills/select-ui-tests/selection.schema.json
+          test -f "$schema_file" || { echo "base branch has no selector skill; the full suite will run" >&2; exit 1; }
+          schema="$(jq -c . "$schema_file")"
+          echo "schema=$schema" >> "$GITHUB_OUTPUT"
 
       # `continue-on-error` is what makes the fallback real: without it a
       # failed or budget-capped selection fails this job, and a job that
@@ -103,7 +107,10 @@ jobs:
           printf '%s' "${SELECTION:-}" > selection.json
           chmod +x .github/scripts/decide-ui-tests.sh
           .github/scripts/decide-ui-tests.sh selection.json "$CONCLUSION" > decision.txt
-          cat decision.txt >> "$GITHUB_OUTPUT"
+          # Only the two keys the UI job consumes are exported, and only
+          # from their own lines; the model-authored reason stays in the
+          # step summary.
+          grep -E '^(run_all|only_testing)=' decision.txt >> "$GITHUB_OUTPUT"
           {
             echo "### UI test selection"
             echo
@@ -129,9 +136,10 @@ jobs:
   ui-tests:
     name: UI tests (selected, English + German)
     needs: select
-    # Runs even if the select job itself failed. Empty outputs then mean the
-    # full UI target, never nothing.
-    if: ${{ !cancelled() && needs.select.result != 'skipped' }}
+    # Runs even if the select job failed or was skipped. Empty outputs mean
+    # the full UI target, never nothing. A fork PR skips selection (no
+    # secrets) and therefore gets the full suite here; only drafts skip.
+    if: ${{ !cancelled() && github.event.pull_request.draft == false }}
     runs-on: macos-26
     timeout-minutes: 45
     env:
