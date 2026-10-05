@@ -1,20 +1,24 @@
 # UI tests on a pull request: run the classes the diff needs, not all of them.
 #
 # This is Tier 2 from the harness design. A first job asks Claude, through
-# anthropics/claude-code-action and the repo's `/select-ui-tests` skill, which
-# UI test classes the changed files touch. The answer is validated against
-# `selection.schema.json`, whose enum is the only way a class name can reach
-# the xcodebuild command line. The second job runs exactly those classes on a
-# macOS runner.
+# anthropics/claude-code-action and the `/select-ui-tests` skill, which UI
+# test classes the changed files touch. The answer is validated against
+# `selection.schema.json`, then `decide-ui-tests.sh` turns it into xcodebuild
+# flags through an allowlist, which is the only way a class name can reach
+# the command line. The second job runs exactly those classes on macOS.
 #
-# Two rules are enforced by the workflow, not by the model:
+# Rules enforced by the workflow and the script, not by the model:
 #   - `LaunchTests` always runs. It is the floor.
-#   - If selection fails, times out, or returns nothing usable, everything
-#     runs. A wrong selection fails open to the full suite, never to silence.
+#   - If selection fails, times out, runs out of budget, or returns nothing
+#     usable, everything in the UI target runs. The selection step carries
+#     `continue-on-error` and the UI job runs on `!cancelled()`, so there is
+#     no path from "selection broke" to "no UI tests".
+#   - The skill and schema are checked out from the base branch, not the PR
+#     head, so a PR cannot rewrite the selector that decides what it runs.
 #
 # Full regression still runs on every merge to `main` in `ci.yml`, which is
-# what catches a wrong selection before a release. Selection picks are kept
-# as an artifact so recall can be measured against those full runs.
+# what catches a wrong selection before a release. Each selection is kept as
+# an artifact so recall can be measured against those full runs.
 name: PR UI tests
 
 on:
@@ -45,15 +49,31 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Prepare the harness
+      # The harness the selector runs comes from the base branch. The diff it
+      # reads still comes from the PR, through gh, so a PR that changes
+      # `.claude/` is reviewed by the previous harness, which is the point.
+      - name: Harness from the base branch
         id: harness
+        env:
+          BASE: ${{ github.base_ref }}
         run: |
+          git fetch --no-tags origin "$BASE"
+          rm -rf .claude
+          git checkout "origin/$BASE" -- .claude
           chmod +x .claude/hooks/guard-critical-paths.sh
           echo "schema=$(jq -c . .claude/skills/select-ui-tests/selection.schema.json)" >> "$GITHUB_OUTPUT"
 
+      # `continue-on-error` is what makes the fallback real: without it a
+      # failed or budget-capped selection fails this job, and a job that
+      # `needs` it is skipped, which is "run nothing", the one outcome the
+      # design forbids. With it, the decide step sees the failure and asks
+      # for the full suite.
       - name: Ask which classes the diff needs
         id: select
-        uses: anthropics/claude-code-action@v1
+        continue-on-error: true
+        uses: anthropics/claude-code-action@12310e4417c3473095c957cb311b3cf59a38d659 # v1.0.99
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_CI_KEY }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
@@ -61,62 +81,32 @@ jobs:
           claude_args: >-
             --json-schema '${{ steps.harness.outputs.schema }}'
             --permission-mode dontAsk
-            --allowedTools "Read,Grep,Glob,Bash(gh pr diff:*),Bash(gh pr view:*)"
+            --allowedTools "Read,Grep,Glob,Bash(git diff:*),Bash(gh pr diff:*),Bash(gh pr view:*)"
             --max-turns 15
             --max-budget-usd 1
             --model claude-opus-5
 
-      # Apply the floor and the fallback, and build the -only-testing flags
-      # from the schema's enum only. The selection JSON is model-authored, so
-      # it arrives through an environment variable, never interpolated.
+      # The selection JSON is model-authored, so it arrives through an
+      # environment variable, never interpolated into the script.
       - name: Decide what runs
         id: decide
         if: ${{ !cancelled() }}
         env:
           SELECTION: ${{ steps.select.outputs.structured_output }}
-          CONCLUSION: ${{ steps.select.outputs.conclusion }}
+          CONCLUSION: ${{ steps.select.outcome }}
         run: |
-          allowed="SearchFlowUITests FavoritesFlowUITests AccessibilityAuditUITests ScreenshotGalleryUITests LaunchTests"
-          floor="LaunchTests"
           printf '%s' "${SELECTION:-}" > selection.json
-
-          if [ "$CONCLUSION" != "success" ] || ! jq -e '.classes' selection.json >/dev/null 2>&1; then
-            run_all=true
-            reason="selection did not produce a valid answer (conclusion: ${CONCLUSION:-none}); running the full suite"
-          elif [ "$(jq -r '.run_all' selection.json)" = "true" ]; then
-            run_all=true
-            reason="$(jq -r '.summary' selection.json)"
-          else
-            run_all=false
-            reason="$(jq -r '.summary' selection.json)"
-          fi
-
-          flags=""
-          if [ "$run_all" = "false" ]; then
-            picked="$( { jq -r '.classes[]' selection.json; echo "$floor"; } | sort -u )"
-            for c in $picked; do
-              case " $allowed " in
-                *" $c "*) flags="$flags -only-testing:testExampleUITests/$c" ;;
-                *) echo "ignoring unknown class '$c'" >&2 ;;
-              esac
-            done
-          fi
-
-          echo "run_all=$run_all" >> "$GITHUB_OUTPUT"
-          echo "only_testing=$flags" >> "$GITHUB_OUTPUT"
-
+          chmod +x .github/scripts/decide-ui-tests.sh
+          .github/scripts/decide-ui-tests.sh selection.json "$CONCLUSION" > decision.txt
+          cat decision.txt >> "$GITHUB_OUTPUT"
           {
             echo "### UI test selection"
             echo
-            echo "**Run everything:** $run_all  "
-            echo "**Reason:** $reason"
-            if [ "$run_all" = "false" ]; then
-              echo
-              echo "Classes:"
-              for c in $picked; do echo "- $c"; done
-              echo
-              echo "Why:"
-              jq -r '.reasons[]? | "- " + .' selection.json
+            sed -n 's/^reason=/**Reason:** /p; s/^run_all=/**Run everything:** /p' decision.txt
+            classes="$(sed -n 's/^classes=//p' decision.txt)"
+            if [ -n "$classes" ]; then
+              echo; echo "Classes:"; for c in $classes; do echo "- $c"; done
+              echo; echo "Why:"; jq -r '.reasons[]? | "- " + .' selection.json 2>/dev/null || true
             fi
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -125,13 +115,18 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ui-test-selection-${{ github.event.pull_request.number }}-${{ github.run_attempt }}
-          path: selection.json
+          path: |
+            selection.json
+            decision.txt
           retention-days: 30
           if-no-files-found: ignore
 
   ui-tests:
     name: UI tests (selected, English + German)
     needs: select
+    # Runs even if the select job itself failed. Empty outputs then mean the
+    # full UI target, never nothing.
+    if: ${{ !cancelled() && needs.select.result != 'skipped' }}
     runs-on: macos-26
     timeout-minutes: 45
     env:
@@ -151,10 +146,10 @@ jobs:
           RUN_ALL: ${{ needs.select.outputs.run_all }}
           ONLY_TESTING: ${{ needs.select.outputs.only_testing }}
         run: |
-          if [ "$RUN_ALL" = "true" ]; then
-            scope="-only-testing:testExampleUITests"
-          else
+          if [ "$RUN_ALL" = "false" ] && [ -n "$ONLY_TESTING" ]; then
             scope="$ONLY_TESTING"
+          else
+            scope="-only-testing:testExampleUITests"
           fi
           echo "xcodebuild scope: $scope"
           # shellcheck disable=SC2086

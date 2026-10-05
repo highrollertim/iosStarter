@@ -41,9 +41,9 @@ submit() { # $1 event, $2 body, $3 comments json array or empty
 
 if [ "$conclusion" != "success" ] || ! jq -e '.verdict' "$file" >/dev/null 2>&1; then
   body="$(printf '%s\n## Claude review: did not run\n\nThe review step finished with conclusion `%s` and no valid verdict. This is not an approval. Re-run the job, or review by hand.\n' "$marker" "$conclusion")"
-  submit COMMENT "$body" ""
-  echo "Posted did-not-run review"
-  exit 0
+  submit COMMENT "$body" "" >/dev/null
+  echo "Posted did-not-run review; failing the step so the check cannot read as a pass" >&2
+  exit 1
 fi
 
 verdict="$(jq -r '.verdict' "$file")"

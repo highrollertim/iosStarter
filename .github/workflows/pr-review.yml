@@ -2,29 +2,31 @@
 #
 # The Tier 1 reviewer from the harness design, run through the official
 # anthropics/claude-code-action rather than a hand-rolled `claude -p` call.
-# The action runs the repo's own `/review-pr` skill with read-only tools, a
-# turn cap and a dollar cap, validates the verdict against
-# `verdict.schema.json`, and hands it back as the `structured_output` output.
-# A small script then submits one pull request review:
+# The action runs the `/review-pr` skill with read-only tools, a turn cap and
+# a dollar cap, validates the verdict against `verdict.schema.json`, and
+# hands it back as the `structured_output` output. A small script then
+# submits one pull request review:
 #
 #   pass              -> APPROVE
 #   changes_requested -> REQUEST_CHANGES, findings inline on the diff
 #   needs_human       -> COMMENT plus the needs-human-review label
-#   did not run       -> COMMENT saying so, never an approval
+#   did not run       -> COMMENT saying so, and the step fails, so the check
+#                        is red and cannot be mistaken for a pass
 #
 # Approving needs the repository setting "Allow GitHub Actions to create and
 # approve pull requests" (Settings > Actions > General). A bot approval
 # satisfies "require N approvals" and does not satisfy "require review from
 # Code Owners", which is the intended split between Routine and the rest.
 #
+# The reviewer's skill, schema, hook and settings are checked out from the
+# base branch, not the PR head. Now that the verdict can approve, a PR must
+# not be able to supply the reviewer that approves it. The diff itself still
+# comes from the PR, through gh.
+#
 # What the model can touch: Read, Grep, Glob and a few read-only git and gh
 # commands. No Edit, no Write. The GitHub token is held by the publish step,
 # not the model, and the API key is a repository secret the model never sees
 # as text. Fork PRs do not receive secrets and are skipped explicitly.
-#
-# The skill and hook live in this repo's `.claude/`, so a PR can change what
-# the reviewer runs. Acceptable for a personal experiment; the company
-# version checks `.claude/` out of a pinned harness repo instead.
 name: PR review
 
 on:
@@ -53,16 +55,22 @@ jobs:
         with:
           fetch-depth: 0
 
-      # The same PreToolUse guard that stops a laptop edit stops the reviewer.
-      - name: Prepare the harness
+      - name: Harness from the base branch
         id: harness
+        env:
+          BASE: ${{ github.base_ref }}
         run: |
+          git fetch --no-tags origin "$BASE"
+          rm -rf .claude
+          git checkout "origin/$BASE" -- .claude
           chmod +x .claude/hooks/guard-critical-paths.sh
           echo "schema=$(jq -c . .claude/skills/review-pr/verdict.schema.json)" >> "$GITHUB_OUTPUT"
 
       - name: Review
         id: review
-        uses: anthropics/claude-code-action@v1
+        uses: anthropics/claude-code-action@12310e4417c3473095c957cb311b3cf59a38d659 # v1.0.99
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_CI_KEY }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
@@ -87,6 +95,7 @@ jobs:
           VERDICT: ${{ steps.review.outputs.structured_output }}
         run: |
           printf '%s' "${VERDICT:-}" > verdict.json
+          chmod +x .github/scripts/publish-review.sh
           .github/scripts/publish-review.sh verdict.json
 
       - name: Keep the raw verdict

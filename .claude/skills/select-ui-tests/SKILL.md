@@ -22,7 +22,7 @@ Five UI test classes exist. Each one is named by what it exercises and the app f
 | `SearchFlowUITests` | Typing a query, results, the no-results state, a failing search, retry, and a failed refresh keeping stale results | `Views/Search/**`, `ViewModels/SearchViewModel.swift`, `Services/**`, `Models/**`, `Support/LoadState.swift`, `Localizable.xcstrings`, `testExampleUITests/Screens/SearchScreen.swift` |
 | `FavoritesFlowUITests` | Favoriting from the detail screen, the round trip to the Favorites tab, deleting via the Edit button | `Views/Detail/**`, `Views/Favorites/**`, `Persistence/**`, `Views/RootView.swift`, `Localizable.xcstrings`, `testExampleUITests/Screens/FavoritesScreen.swift`, `testExampleUITests/Screens/RepoDetailScreen.swift` |
 | `AccessibilityAuditUITests` | `performAccessibilityAudit()` on results, favorites, and the failure banner, at default and the largest Dynamic Type size | Any file under `Views/**`, `Assets.xcassets/**`, `Localizable.xcstrings`, any screen object |
-| `ScreenshotGalleryUITests` | Walks four screens and attaches the README screenshots, English and one German | Any file under `Views/**`, `Assets.xcassets/**`, `Localizable.xcstrings` |
+| `ScreenshotGalleryUITests` | Walks four screens and attaches the README screenshots, English and one German | Any file under `Views/**`, `Assets.xcassets/**`, `Localizable.xcstrings`, any screen object under `testExampleUITests/Screens/` |
 | `LaunchTests` | The app launches at all, once per language, plus a launch-time metric | Always. The workflow adds it whether or not you select it |
 
 ## Rules that override the table
