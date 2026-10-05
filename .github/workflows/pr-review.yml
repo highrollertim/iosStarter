@@ -24,9 +24,15 @@
 # comes from the PR, through gh.
 #
 # What the model can touch: Read, Grep, Glob and a few read-only git and gh
-# commands. No Edit, no Write. The GitHub token is held by the publish step,
-# not the model, and the API key is a repository secret the model never sees
-# as text. Fork PRs do not receive secrets and are skipped explicitly.
+# commands, under `--permission-mode dontAsk`. No Edit, no Write, and no
+# `gh pr review` or `gh api`. A GitHub token is present in the model's
+# environment so `gh pr view` and `gh pr diff` work; the control that keeps
+# it from approving or commenting is the tool allowlist, not the absence of
+# a token. The workspace is not marked trusted on the runner, so the
+# checked-in `permissions.allow` list in `.claude/settings.json` is inert
+# here and `--allowedTools` is the only allowlist in force. The API key is a
+# repository secret the model never sees as text. Fork PRs do not receive
+# secrets and are skipped explicitly.
 name: PR review
 
 on:

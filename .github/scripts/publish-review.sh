@@ -76,6 +76,11 @@ render_body() { # $1 title, $2 optional preface line
 }
 
 body="$(render_body "$title")"
+# GitHub caps a review body at 65536 characters. A verdict with many long
+# findings is truncated with a note rather than rejected.
+if [ "${#body}" -gt 60000 ]; then
+  body="${body:0:60000}"$'\n\n'"_Truncated: the full verdict is in the workflow artifact._"
+fi
 
 # Inline comments for findings that name a line.
 comments="$(jq -c '
@@ -93,7 +98,7 @@ else
     body="$(render_body "Claude review: pass (approval disabled)" "Verdict was **pass**, but this repository does not allow GitHub Actions to approve pull requests, so this is posted as a comment. Turn on \"Allow GitHub Actions to create and approve pull requests\" under Settings > Actions > General for the approval to count.")"
     url="$(submit COMMENT "$body" "$comments" || submit COMMENT "$body" "")"
     echo "Submitted COMMENT review: $url"
-  elif grep -qi -E 'line|path|diff|position' <<<"$err"; then
+  elif grep -qi -E 'must be part of the diff|PullRequestReviewThread|pull_request_review_thread' <<<"$err"; then
     echo "Inline comments rejected (a line outside the diff); resubmitting with findings in the body only" >&2
     url="$(submit "$event" "$body" "")"
     echo "Submitted $event review: $url"

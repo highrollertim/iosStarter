@@ -29,6 +29,9 @@ if [ "$1" = "api" ] && [ "$2" = "--method" ] && [ "$3" = "POST" ]; then
   echo "$ev comments=$n" >> "$STUB_LOG"
   echo "https://example.test/review"; exit 0
 fi
+if [ "$1" = "pr" ] && [ "$2" = "edit" ]; then
+  echo "label $5" >> "$STUB_LOG"; exit 0
+fi
 exit 0
 EOF
 chmod +x "$tmp/gh"
@@ -47,7 +50,9 @@ jq '.verdict="needs_human"' <<<"$base" > "$tmp/nh.json"
 
 check "pass approves"              "exit=0 APPROVE comments=0"         "$(run success "$tmp/pass.json")"
 check "changes requested inline"   "exit=0 REQUEST_CHANGES comments=1" "$(run success "$tmp/cr.json")"
-check "needs human comments"       "exit=0 COMMENT comments=0"         "$(run success "$tmp/nh.json")"
+check "needs human comments and labels" "exit=0 COMMENT comments=0 label needs-human-review" "$(run success "$tmp/nh.json")"
+jq '.verdict="pass" | .summary=("x" * 70000)' <<<"$base" > "$tmp/long.json"
+check "very long body still approves" "exit=0 APPROVE comments=0"       "$(run success "$tmp/long.json")"
 check "did not run: failure"       "exit=1 COMMENT comments=0"         "$(run failure "$tmp/pass.json")"
 check "did not run: empty"         "exit=1 COMMENT comments=0"         "$(run success "$tmp/empty.json")"
 check "inline rejected falls back" "exit=0 REQUEST_CHANGES comments=0" "$(REJECT_INLINE=1 run success "$tmp/cr.json")"

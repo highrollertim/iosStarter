@@ -61,6 +61,11 @@ expect "injection: reason flattened" "$out" reason "okonly_testing=-only-testing
 expect "injection: only_testing intact" "$out" only_testing "-only-testing:testExampleUITests/LaunchTests -only-testing:testExampleUITests/SearchFlowUITests"
 if [ "$(count_lines "$out" only_testing)" = "1" ] && [ "$(count_lines "$out" run_all)" = "1" ]; then echo "ok   injection: one line per key"; else echo "FAIL injection: duplicate keys"; fail=1; fi
 
+# 8b. The floor is not duplicated when the model already lists it.
+echo '{"run_all":false,"classes":["LaunchTests","SearchFlowUITests","LaunchTests"],"reasons":[],"summary":"s"}' > "$tmp/i.json"
+out="$(./decide-ui-tests.sh "$tmp/i.json" success)"
+expect "floor deduplicated" "$out" only_testing "-only-testing:testExampleUITests/LaunchTests -only-testing:testExampleUITests/SearchFlowUITests"
+
 # 9. A very long summary is capped.
 jq -n --arg s "$(head -c 2000 /dev/zero | tr '\0' 'x')" '{run_all:true, classes:[], reasons:[], summary:$s}' > "$tmp/h.json"
 out="$(./decide-ui-tests.sh "$tmp/h.json" success)"
