@@ -78,6 +78,14 @@ jobs:
             cp .github/scripts/decide-ui-tests.sh base-scripts/decide-ui-tests.sh
           fi
           chmod +x base-scripts/decide-ui-tests.sh
+          # The selector and its schema come from the base branch, so they
+          # cannot name a UI test class this PR adds. A PR that adds or
+          # removes a UI test file therefore runs everything, decided here
+          # from the diff and not by the model.
+          if git diff --name-only --diff-filter=AD "origin/$BASE...HEAD" -- testExample/testExampleUITests | grep -q '\.swift$'; then
+            echo "this PR adds or removes UI test files; the full suite will run" >&2
+            exit 1
+          fi
           schema_file=.claude/skills/select-ui-tests/selection.schema.json
           test -f "$schema_file" || { echo "base branch has no selector skill; the full suite will run" >&2; exit 1; }
           schema="$(jq -c . "$schema_file")"
@@ -102,7 +110,7 @@ jobs:
           claude_args: >-
             --json-schema '${{ steps.harness.outputs.schema }}'
             --permission-mode dontAsk
-            --allowedTools "Read,Grep,Glob,Bash(git diff:*),Bash(gh pr diff:*),Bash(gh pr view:*)"
+            --allowedTools "Read,Grep,Glob,Bash(gh pr diff:*),Bash(gh pr view:*)"
             --max-turns 15
             --max-budget-usd 1
             --model claude-opus-5

@@ -17,8 +17,8 @@ expect "real tree passes" 0 "$(rc_of bash "$here/check-ui-test-catalog.sh")"
 # 2. A class renamed in the target, including one in a subdirectory, fails.
 cp -R "$root/testExample/testExampleUITests" "$tmp/ui"
 mkdir -p "$tmp/ui/Nested"
-printf 'import XCTest\nfinal class BrandNewUITests: XCTestCase {}\n' > "$tmp/ui/Nested/BrandNewUITests.swift"
-expect "new class in a subdirectory fails" 1 "$(rc_of env UITESTS_DIR="$tmp/ui" bash "$here/check-ui-test-catalog.sh")"
+printf 'import XCTest\n@MainActor\n  public final class BrandNewUITests : XCTestCase {}\n' > "$tmp/ui/Nested/BrandNewUITests.swift"
+expect "new class in a subdirectory, odd declaration form, fails" 1 "$(rc_of env UITESTS_DIR="$tmp/ui" bash "$here/check-ui-test-catalog.sh")"
 
 # 3. A schema enum missing a class fails.
 jq 'del(.properties.classes.items.enum[0])' "$root/.claude/skills/select-ui-tests/selection.schema.json" > "$tmp/schema.json"

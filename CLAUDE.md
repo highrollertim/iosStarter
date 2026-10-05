@@ -99,7 +99,7 @@ and the UI suite only when a view or a screen object changed.
 A `PreToolUse` hook in `.claude/settings.json` blocks agent edits to these paths.
 They change rarely, by hand, in a PR tagged `risk:critical`:
 
-- `.github/workflows/*`
+- `.github/workflows/*` and `.github/scripts/*` (the review publisher and the test-selection decision live there)
 - `testExample.xcodeproj/project.pbxproj`
 - `testExample/testExample/PrivacyInfo.xcprivacy`
 - `testExample/testExample.xctestplan`

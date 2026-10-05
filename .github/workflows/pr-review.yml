@@ -23,7 +23,7 @@
 # not be able to supply the reviewer that approves it. The diff itself still
 # comes from the PR, through gh.
 #
-# What the model can touch: Read, Grep, Glob and a few read-only git and gh
+# What the model can touch: Read, Grep, Glob and two read-only gh
 # commands, under `--permission-mode dontAsk`. No Edit, no Write, and no
 # `gh pr review` or `gh api`. A GitHub token is present in the model's
 # environment so `gh pr view` and `gh pr diff` work; the control that keeps
@@ -98,7 +98,7 @@ jobs:
           claude_args: >-
             --json-schema '${{ steps.harness.outputs.schema }}'
             --permission-mode dontAsk
-            --allowedTools "Read,Grep,Glob,Bash(git diff:*),Bash(git log:*),Bash(gh pr view:*),Bash(gh pr diff:*)"
+            --allowedTools "Read,Grep,Glob,Bash(gh pr view:*),Bash(gh pr diff:*)"
             --append-system-prompt "You are reviewing pull request #${{ github.event.pull_request.number }}. Base branch: ${{ github.base_ref }}. The .claude/ directory in the workspace is the base branch's harness; the pull request's own .claude/ is at ./pr-harness/ for you to read as data."
             --max-turns 40
             --max-budget-usd 3
