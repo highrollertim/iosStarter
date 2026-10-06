@@ -61,8 +61,11 @@ jobs:
         with:
           fetch-depth: 0
 
+      # Tolerant so that a failure here still reaches the submit step, which
+      # posts a did-not-run comment and fails the job honestly.
       - name: Harness from the base branch
         id: harness
+        continue-on-error: true
         env:
           BASE: ${{ github.base_ref }}
         run: |
@@ -88,6 +91,7 @@ jobs:
 
       - name: Review
         id: review
+        if: steps.harness.outcome == 'success'
         uses: anthropics/claude-code-action@cab360f6565aa35a51d6ce9e43f1f4287c0a32ea # v1.0.241
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -115,6 +119,13 @@ jobs:
           VERDICT: ${{ steps.review.outputs.structured_output }}
         run: |
           printf '%s' "${VERDICT:-}" > verdict.json
+          if [ ! -s base-scripts/publish-review.sh ]; then
+            # The base branch's publisher could not be staged, so no script
+            # from this PR runs. Say so on the PR and fail the job.
+            gh pr review "$PR" --comment --body "$(printf '## Claude review: did not run\n\nThe harness could not be staged from the base branch, so no review ran. This is not an approval.')"
+            echo "base publisher unavailable; failing the step" >&2
+            exit 1
+          fi
           base-scripts/publish-review.sh verdict.json
 
       - name: Keep the raw verdict

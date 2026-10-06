@@ -68,16 +68,16 @@ jobs:
           chmod +x .claude/hooks/guard-critical-paths.sh
           # The decision script, which enforces the floor and the allowlist,
           # comes from the base branch too, for the same reason the review
-          # publisher does. A base without it yet (the PR that introduces
-          # it) uses the PR's copy, and says so in the log.
+          # publisher does. A base without it yet runs everything; the PR's
+          # own copy is never executed.
           mkdir -p base-scripts
           if git show "origin/$BASE:.github/scripts/decide-ui-tests.sh" > base-scripts/decide-ui-tests.sh 2>/dev/null; then
-            echo "decide-ui-tests.sh taken from origin/$BASE"
+            chmod +x base-scripts/decide-ui-tests.sh
           else
-            echo "base branch has no decide-ui-tests.sh; using the PR's copy for this run" >&2
-            cp .github/scripts/decide-ui-tests.sh base-scripts/decide-ui-tests.sh
+            rm -f base-scripts/decide-ui-tests.sh
+            echo "base branch has no decide-ui-tests.sh; the full suite will run" >&2
+            exit 1
           fi
-          chmod +x base-scripts/decide-ui-tests.sh
           # The selector and its schema come from the base branch, so they
           # cannot name a UI test class this PR adds. A PR that adds or
           # removes a UI test file therefore runs everything, decided here
@@ -131,12 +131,13 @@ jobs:
           CONCLUSION: ${{ steps.select.outcome }}
         run: |
           printf '%s' "${SELECTION:-}" > selection.json
-          if [ ! -x base-scripts/decide-ui-tests.sh ]; then
-            # The harness step failed before it could stage the script; the
-            # PR's copy still applies the floor and the fallback.
-            mkdir -p base-scripts && cp .github/scripts/decide-ui-tests.sh base-scripts/ && chmod +x base-scripts/decide-ui-tests.sh
+          if [ -x base-scripts/decide-ui-tests.sh ]; then
+            base-scripts/decide-ui-tests.sh selection.json "$CONCLUSION" > decision.txt
+          else
+            # No base-branch decision script could be staged. Nothing from
+            # this PR runs in its place: the answer is simply everything.
+            printf 'run_all=true\nonly_testing=\nclasses=\nreason=base branch has no decision script; running the full suite\n' > decision.txt
           fi
-          base-scripts/decide-ui-tests.sh selection.json "$CONCLUSION" > decision.txt
           # Only the two keys the UI job consumes are exported, and only
           # from their own lines; the model-authored reason stays in the
           # step summary.
@@ -209,6 +210,6 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: pr-ui-tests-xcresult
+          name: pr-ui-tests-xcresult-${{ github.run_attempt }}
           path: UITests.xcresult.tgz
           retention-days: 7

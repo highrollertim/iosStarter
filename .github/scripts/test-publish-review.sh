@@ -24,7 +24,7 @@ if [ "$1" = "api" ] && [ "$2" = "--method" ] && [ "$3" = "POST" ]; then
     echo 'gh: Unprocessable Entity (HTTP 422): GitHub Actions is not permitted to approve pull requests.' >&2; exit 1
   fi
   if [ "${REJECT_INLINE:-0}" = "1" ] && [ "$n" -gt 0 ]; then
-    echo 'gh: Unprocessable Entity (HTTP 422): Pull request review thread line must be part of the diff' >&2; exit 1
+    echo 'gh: Unprocessable Entity (HTTP 422): Validation Failed: path is not part of the diff (some other wording)' >&2; exit 1
   fi
   echo "$ev comments=$n" >> "$STUB_LOG"
   echo "https://example.test/review"; exit 0

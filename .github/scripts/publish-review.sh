@@ -108,24 +108,31 @@ comments="$(jq -c '
     { path: .file, line: .line, side: "RIGHT",
       body: "\(.severity | sev_icon) **\(.title)**\n\n\(.rationale)\n\n_Suggested fix:_ \(.suggested_fix)" } ]' "$file")"
 
+# Submission, in three tiers. Any failure of the inline-comment form is
+# retried without inline comments, whatever GitHub's reason: a line outside
+# the diff, a file not in the diff, a position the API will not accept.
+# Only a failure of the body-only form is classified.
+url=""
 if url="$(submit "$event" "$body" "$comments")"; then
   echo "Submitted $event review ($(jq 'length' <<<"$comments") inline comments): $url"
 else
-  err="$(cat "$errfile")"
-  if [ "$event" = "APPROVE" ] && grep -qi -E 'not permitted to (create and )?approve|not allowed to approve' <<<"$err"; then
-    echo "Approval rejected by GitHub (the repository setting that lets Actions approve pull requests is off); submitting as a comment instead" >&2
-    body="$(capped "$(render_body "Claude review: pass (approval disabled)" "Verdict was **pass**, but this repository does not allow GitHub Actions to approve pull requests, so this is posted as a comment. Turn on \"Allow GitHub Actions to create and approve pull requests\" under Settings > Actions > General for the approval to count.")")"
-    # Status captured explicitly: this is the pass path, and it must stay
-    # green even if both comment attempts fail on a transient error.
-    url="$(submit COMMENT "$body" "$comments" || submit COMMENT "$body" "" || true)"
-    if [ -n "$url" ]; then echo "Submitted COMMENT review: $url"; else echo "warning: could not post the pass as a comment: $(cat "$errfile")" >&2; fi
-  elif grep -qi -E 'must be part of the diff|PullRequestReviewThread|pull_request_review_thread' <<<"$err"; then
-    echo "Inline comments rejected (a line outside the diff); resubmitting with findings in the body only" >&2
-    url="$(submit "$event" "$body" "")"
+  first_err="$(cat "$errfile")"
+  if [ -n "$comments" ] && [ "$comments" != "[]" ] && url="$(submit "$event" "$body" "")"; then
+    echo "Inline comments rejected, resubmitted with findings in the body only. GitHub said: ${first_err:0:200}" >&2
     echo "Submitted $event review: $url"
   else
-    echo "Review submission failed: $err" >&2
-    exit 1
+    err="$(cat "$errfile")"
+    if [ "$event" = "APPROVE" ] && grep -qi -E 'not permitted to (create and )?approve|not allowed to approve' <<<"$err"; then
+      echo "Approval rejected by GitHub (the repository setting that lets Actions approve pull requests is off); submitting as a comment instead" >&2
+      body="$(capped "$(render_body "Claude review: pass (approval disabled)" "Verdict was **pass**, but this repository does not allow GitHub Actions to approve pull requests, so this is posted as a comment. Turn on \"Allow GitHub Actions to create and approve pull requests\" under Settings > Actions > General for the approval to count.")")"
+      # Status captured explicitly: this is the pass path, and it must stay
+      # green even if both comment attempts fail on a transient error.
+      url="$(submit COMMENT "$body" "$comments" || submit COMMENT "$body" "" || true)"
+      if [ -n "$url" ]; then echo "Submitted COMMENT review: $url"; else echo "warning: could not post the pass as a comment: $(cat "$errfile")" >&2; fi
+    else
+      echo "Review submission failed: $err" >&2
+      exit 1
+    fi
   fi
 fi
 
