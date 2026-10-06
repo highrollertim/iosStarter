@@ -30,8 +30,9 @@ testExample/testExample/            app target
 testExample/testExampleTests/        Swift Testing unit suite (@Suite, @Test, #expect)
 testExample/testExampleUITests/      XCTest UI suite; Screens/ are page objects, Support/ has launch helpers
 testExample/testExample.xctestplan   runs every suite twice: English and German
-.github/workflows/ci.yml             unit, UI, and advisory swift-format on macos-26
-.github/workflows/pr-review.yml      headless Claude Code review on every PR
+.github/workflows/ci.yml             unit tests and advisory swift-format on every PR; full UI suite on main
+.github/workflows/pr-review.yml      Claude Code review on every PR via claude-code-action, submitted as a PR review
+.github/workflows/pr-ui-tests.yml    Claude picks the UI test classes the diff needs; LaunchTests always runs
 ```
 
 ## Commands
@@ -98,7 +99,7 @@ and the UI suite only when a view or a screen object changed.
 A `PreToolUse` hook in `.claude/settings.json` blocks agent edits to these paths.
 They change rarely, by hand, in a PR tagged `risk:critical`:
 
-- `.github/workflows/*`
+- `.github/workflows/*` and `.github/scripts/*` (the review publisher and the test-selection decision live there)
 - `testExample.xcodeproj/project.pbxproj`
 - `testExample/testExample/PrivacyInfo.xcprivacy`
 - `testExample/testExample.xctestplan`

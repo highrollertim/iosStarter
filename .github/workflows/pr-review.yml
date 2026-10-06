@@ -1,30 +1,44 @@
-# Headless Claude Code review on every pull request.
+# Claude Code review on every pull request, submitted as a real review.
 #
-# This is the Tier 1 reviewer from the harness design: `claude -p` runs the
-# repo's own `/review-pr` skill with read-only tools, a turn cap and a dollar
-# cap, and returns a verdict shaped by `verdict.schema.json`. A small script
-# turns that verdict into one PR comment that is edited in place on re-runs.
+# The Tier 1 reviewer from the harness design, run through the official
+# anthropics/claude-code-action rather than a hand-rolled `claude -p` call.
+# The action runs the `/review-pr` skill with read-only tools, a turn cap and
+# a dollar cap, validates the verdict against `verdict.schema.json`, and
+# hands it back as the `structured_output` output. A small script then
+# submits one pull request review:
 #
-# It is advisory. Nothing here is a required check yet, and nothing here can
-# edit, push, or merge: the tool allowlist has no Edit or Write, the GitHub
-# token is held by the publish step, not the model, and the model never sees
-# the API key as text.
+#   pass              -> APPROVE
+#   changes_requested -> REQUEST_CHANGES, findings inline on the diff
+#   needs_human       -> COMMENT plus the needs-human-review label
+#   did not run       -> COMMENT saying so, and the step fails, so the check
+#                        is red and cannot be mistaken for a pass
 #
-# The API key is a repository secret, `ANTHROPIC_CI_KEY`. It is never written
-# into this file. Fork PRs do not receive secrets, so they are skipped
-# explicitly rather than failing with a confusing auth error.
+# Approving needs the repository setting "Allow GitHub Actions to create and
+# approve pull requests" (Settings > Actions > General). A bot approval
+# satisfies "require N approvals" and does not satisfy "require review from
+# Code Owners", which is the intended split between Routine and the rest.
 #
-# Because the skill and hook live in this repo's `.claude/`, a PR can change
-# what the reviewer runs. That is acceptable for a personal experiment and is
-# exactly what the company version fixes by checking `.claude/` out of a
-# pinned harness repo instead.
+# The reviewer's skill, schema, hook and settings are checked out from the
+# base branch, not the PR head. Now that the verdict can approve, a PR must
+# not be able to supply the reviewer that approves it. The diff itself still
+# comes from the PR, through gh.
+#
+# What the model can touch: Read, Grep, Glob and two read-only gh
+# commands, under `--permission-mode dontAsk`. No Edit, no Write, and no
+# `gh pr review` or `gh api`. A GitHub token is present in the model's
+# environment so `gh pr view` and `gh pr diff` work; the control that keeps
+# it from approving or commenting is the tool allowlist, not the absence of
+# a token. The workspace is not marked trusted on the runner, so the
+# checked-in `permissions.allow` list in `.claude/settings.json` is inert
+# here and `--allowedTools` is the only allowlist in force. The API key is a
+# repository secret the model never sees as text. Fork PRs do not receive
+# secrets and are skipped explicitly.
 name: PR review
 
 on:
   pull_request:
     types: [opened, synchronize, ready_for_review]
 
-# A new push supersedes the review in flight. One live review per PR.
 concurrency:
   group: pr-review-${{ github.event.pull_request.number }}
   cancel-in-progress: true
@@ -32,14 +46,13 @@ concurrency:
 permissions:
   contents: read
   pull-requests: write
+  issues: write
 
 jobs:
   review:
-    name: Claude Code review (advisory)
-    # Review needs the diff, not Xcode, so this runs on Linux and costs
-    # minutes, not macOS minutes.
+    name: Claude Code review
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     if: >-
       github.event.pull_request.draft == false &&
       github.event.pull_request.head.repo.full_name == github.repository
@@ -48,57 +61,110 @@ jobs:
         with:
           fetch-depth: 0
 
-      # The hook script needs to be executable on the runner too: the same
-      # PreToolUse guard that stops a laptop edit stops the reviewer.
-      #
-      # A fresh runner has never "trusted" this checkout, and an untrusted
-      # workspace has its checked-in permission rules ignored (hooks still
-      # run). Writing the trust flag for the workspace path is what an
-      # interactive session would have done by accepting the dialog.
-      - name: Install Claude Code
+      # Tolerant so that a failure here still reaches the submit step, which
+      # posts a did-not-run comment and fails the job honestly.
+      - name: Harness from the base branch
+        id: harness
+        continue-on-error: true
+        env:
+          BASE: ${{ github.base_ref }}
         run: |
-          npm install -g @anthropic-ai/claude-code@2.1.289
+          git fetch --no-tags origin "$BASE"
+          # Keep the PR's own harness readable as data at ./pr-harness, so a
+          # PR that changes `.claude/` can still be reviewed in full while the
+          # reviewer itself runs from the base branch.
+          rm -rf pr-harness && cp -R .claude pr-harness
+          rm -rf .claude
+          git checkout "origin/$BASE" -- .claude
+          # CLAUDE.md is loaded as project instructions, so it is part of the
+          # harness and comes from the base branch for the same reason.
+          git show "origin/$BASE:CLAUDE.md" > CLAUDE.md 2>/dev/null || rm -f CLAUDE.md
           chmod +x .claude/hooks/guard-critical-paths.sh
-          claude --version
-          cfg="$HOME/.claude.json"
-          [ -f "$cfg" ] || echo '{}' > "$cfg"
-          jq --arg p "$GITHUB_WORKSPACE" '.projects[$p].hasTrustDialogAccepted = true' "$cfg" > "$cfg.tmp" && mv "$cfg.tmp" "$cfg"
+          schema_file=.claude/skills/review-pr/verdict.schema.json
+          test -f "$schema_file" || { echo "base branch has no review skill; the review cannot run" >&2; exit 1; }
+          schema="$(jq -c . "$schema_file")"
+          echo "schema=$schema" >> "$GITHUB_OUTPUT"
+          # The publisher, which maps a verdict to APPROVE and holds the
+          # write-capable token, also comes from the base branch. The
+          # workflow file itself cannot: pull_request events always run the
+          # PR's copy, and that residual gap is stated in the brief.
+          mkdir -p base-scripts
+          git show "origin/$BASE:.github/scripts/publish-review.sh" > base-scripts/publish-review.sh
+          chmod +x base-scripts/publish-review.sh
 
+      # The action restores .claude/, CLAUDE.md and similar files from the
+      # base branch on pull_request events on its own ("PR head is
+      # untrusted" in its log). The staging step above does the same for the
+      # publisher, which the action does not know about.
+      #
+      # Two attempts. A model run can end without emitting the structured
+      # verdict (the action reports "did not return structured_output"); one
+      # retry turns that from a red did-not-run into a review.
       - name: Review
         id: review
+        if: steps.harness.outcome == 'success'
+        continue-on-error: true
+        uses: anthropics/claude-code-action@cab360f6565aa35a51d6ce9e43f1f4287c0a32ea # v1.0.241
         env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_CI_KEY }}
-          GH_TOKEN: ${{ github.token }}
-          PR: ${{ github.event.pull_request.number }}
-        run: |
-          set +e
-          claude -p "/review-pr $PR" \
-            --output-format json \
-            --json-schema "$(cat .claude/skills/review-pr/verdict.schema.json)" \
-            --permission-mode dontAsk \
-            --allowedTools "Read,Grep,Glob,Bash(git diff:*),Bash(git log:*),Bash(gh pr view:*),Bash(gh pr diff:*)" \
-            --append-system-prompt "You are reviewing pull request #$PR. Base branch: ${{ github.base_ref }}." \
-            --max-turns 40 \
-            --max-budget-usd 3 \
-            --no-session-persistence \
-            --model claude-opus-5 \
-            > review.json
-          echo "exit=$?" >> "$GITHUB_OUTPUT"
-          set -e
-          echo "### Claude review run" >> "$GITHUB_STEP_SUMMARY"
-          jq -r '"- turns: \(.num_turns // "n/a")\n- cost (USD): \(.total_cost_usd // "n/a")"' review.json >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_CI_KEY }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          prompt: "/review-pr ${{ github.event.pull_request.number }}"
+          claude_args: >-
+            --json-schema '${{ steps.harness.outputs.schema }}'
+            --permission-mode dontAsk
+            --allowedTools "Read,Grep,Glob,Bash(gh pr view:*),Bash(gh pr diff:*)"
+            --append-system-prompt "You are reviewing pull request #${{ github.event.pull_request.number }}. Base branch: ${{ github.base_ref }}. The .claude/ directory in the workspace is the base branch's harness; the pull request's own .claude/ is at ./pr-harness/ for you to read as data."
+            --max-turns 40
+            --max-budget-usd 3
+            --model claude-sonnet-5-5
 
-      - name: Publish verdict as a PR comment
+      - name: Review (retry)
+        id: review_retry
+        if: steps.harness.outcome == 'success' && steps.review.outcome != 'success'
+        continue-on-error: true
+        uses: anthropics/claude-code-action@cab360f6565aa35a51d6ce9e43f1f4287c0a32ea # v1.0.241
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_CI_KEY }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          prompt: "/review-pr ${{ github.event.pull_request.number }}"
+          claude_args: >-
+            --json-schema '${{ steps.harness.outputs.schema }}'
+            --permission-mode dontAsk
+            --allowedTools "Read,Grep,Glob,Bash(gh pr view:*),Bash(gh pr diff:*)"
+            --append-system-prompt "You are reviewing pull request #${{ github.event.pull_request.number }}. Base branch: ${{ github.base_ref }}. The .claude/ directory in the workspace is the base branch's harness; the pull request's own .claude/ is at ./pr-harness/ for you to read as data."
+            --max-turns 40
+            --max-budget-usd 3
+            --model claude-sonnet-5-5
+
+      # The verdict travels through an environment variable, never through
+      # string interpolation into the script, because it is model-authored.
+      - name: Submit the pull request review
+        if: ${{ !cancelled() }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR: ${{ github.event.pull_request.number }}
-          REVIEW_EXIT: ${{ steps.review.outputs.exit }}
-        run: .github/scripts/publish-review.sh review.json
+          REVIEW_CONCLUSION: ${{ (steps.review.outcome == 'success' || steps.review_retry.outcome == 'success') && 'success' || 'failure' }}
+          VERDICT: ${{ steps.review_retry.outputs.structured_output || steps.review.outputs.structured_output }}
+        run: |
+          printf '%s' "${VERDICT:-}" > verdict.json
+          if [ ! -s base-scripts/publish-review.sh ]; then
+            # The base branch's publisher could not be staged, so no script
+            # from this PR runs. Say so on the PR and fail the job.
+            gh pr review "$PR" --comment --body "$(printf '## Claude review: did not run\n\nThe harness could not be staged from the base branch, so no review ran. This is not an approval.')"
+            echo "base publisher unavailable; failing the step" >&2
+            exit 1
+          fi
+          base-scripts/publish-review.sh verdict.json
 
       - name: Keep the raw verdict
-        if: always()
+        if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v4
         with:
           name: claude-review-${{ github.event.pull_request.number }}-${{ github.run_attempt }}
-          path: review.json
+          path: verdict.json
           retention-days: 7
+          if-no-files-found: ignore

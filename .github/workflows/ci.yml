@@ -6,8 +6,12 @@
 # The two test jobs run the shared `testExample` scheme, which means both run
 # `testExample.xctestplan` — English *and* German. That is deliberate: the
 # German configuration is the app's localization check, and a check that only
-# runs when someone remembers to ask for it is not a check. The third job is
-# the advisory formatter; it builds nothing and can only ever print.
+# runs when someone remembers to ask for it is not a check. The unit job runs
+# on every pull request and every merge; the UI job runs the full suite on
+# merges to `main` only, with `pr-ui-tests.yml` running the diff-selected
+# classes on a pull request, `LaunchTests` always among them. The third job
+# is the advisory formatter; it builds nothing and can only ever print. A
+# fourth, on Linux, runs the fixture tests for the harness scripts.
 name: CI
 
 on:
@@ -15,11 +19,18 @@ on:
     branches: [main]
   pull_request:
 
+# Least privilege for every job here, including the one that runs
+# PR-authored shell in the fixture tests. Nothing in this workflow writes
+# to the repository or to pull requests.
+permissions:
+  contents: read
+
 # One live run per pull request. A new push supersedes the run in flight,
-# which otherwise keeps three macOS jobs busy producing a result nobody will
-# read. That matters more than it sounds: hosted macOS allows five concurrent
-# jobs, this workflow uses three per run, and one stale run is already enough
-# to queue part of the one that counts.
+# which otherwise keeps macOS jobs busy producing a result nobody will read.
+# That matters more than it sounds: hosted macOS allows five concurrent jobs,
+# this workflow uses two per pull request (three on `main`) and
+# `pr-ui-tests.yml` adds one more, so one stale run is already enough to
+# queue part of the one that counts.
 #
 # Off a pull request the group is the commit itself, so runs on `main` never
 # share a group and never queue behind each other. That is the only shape
@@ -75,6 +86,12 @@ jobs:
 
   ui-tests:
     name: UI tests (English + German)
+    # The full UI suite runs on `main` only. On a pull request the
+    # `pr-ui-tests.yml` workflow runs the classes the diff selects, with
+    # `LaunchTests` as the floor and "run everything" as the fallback when
+    # selection cannot decide. Full regression on every merge is what catches
+    # a wrong selection before a release, which is why this job stays.
+    if: github.event_name == 'push'
     runs-on: macos-26
     # Not `continue-on-error`: a UI suite whose failures are advisory stops
     # being a suite. The timeout is the safety valve instead — the UI suite
@@ -154,3 +171,22 @@ jobs:
       - name: Lint
         run: |
           xcrun swift-format lint --recursive testExample || true
+
+  harness-checks:
+    name: Harness script checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      # Fixture tests for the scripts the pull request workflows depend on:
+      # the selection-to-xcodebuild decision (floor, fallback, allowlist),
+      # the review publisher (event per verdict, inline fallback, red on
+      # did-not-run), and the check that the selection catalog, its schema
+      # and the allowlist name exactly the UI test classes that exist.
+      - name: Run the fixture tests
+        run: |
+          chmod +x .github/scripts/*.sh
+          .github/scripts/test-decide-ui-tests.sh
+          .github/scripts/test-publish-review.sh
+          .github/scripts/test-check-ui-test-catalog.sh
+          .github/scripts/check-ui-test-catalog.sh

@@ -1,0 +1,237 @@
+# UI tests on a pull request: run the classes the diff needs, not all of them.
+#
+# This is Tier 2 from the harness design. A first job asks Claude, through
+# anthropics/claude-code-action and the `/select-ui-tests` skill, which UI
+# test classes the changed files touch. The answer is validated against
+# `selection.schema.json`, then `decide-ui-tests.sh` turns it into xcodebuild
+# flags through an allowlist, which is the only way a class name can reach
+# the command line. The second job runs exactly those classes on macOS.
+#
+# Rules enforced by the workflow and the script, not by the model:
+#   - `LaunchTests` always runs. It is the floor.
+#   - If selection fails, times out, runs out of budget, or returns nothing
+#     usable, everything in the UI target runs. The selection step carries
+#     `continue-on-error` and the UI job runs on `!cancelled()`, so there is
+#     no path from "selection broke" to "no UI tests".
+#   - The skill and schema are checked out from the base branch, not the PR
+#     head, so a PR cannot rewrite the selector that decides what it runs.
+#
+# Full regression still runs on every merge to `main` in `ci.yml`, which is
+# what catches a wrong selection before a release. Each selection is kept as
+# an artifact so recall can be measured against those full runs.
+name: PR UI tests
+
+on:
+  pull_request:
+    types: [opened, synchronize, ready_for_review]
+
+concurrency:
+  group: pr-ui-tests-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  select:
+    name: Select UI tests from the diff
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    if: >-
+      github.event.pull_request.draft == false &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    outputs:
+      run_all: ${{ steps.decide.outputs.run_all }}
+      only_testing: ${{ steps.decide.outputs.only_testing }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # The harness the selector runs comes from the base branch. The diff it
+      # reads still comes from the PR, through gh, so a PR that changes
+      # `.claude/` is reviewed by the previous harness, which is the point.
+      # Tolerant on purpose: a base branch without the selector yet (the PR
+      # that introduces it, for one) is a reason to run everything, not a
+      # reason for a red job.
+      - name: Harness from the base branch
+        id: harness
+        continue-on-error: true
+        env:
+          BASE: ${{ github.base_ref }}
+        run: |
+          git fetch --no-tags origin "$BASE"
+          rm -rf pr-harness && cp -R .claude pr-harness   # the PR's own harness, readable as data
+          rm -rf .claude
+          git checkout "origin/$BASE" -- .claude
+          # CLAUDE.md is loaded as project instructions, so it is part of the
+          # harness and comes from the base branch for the same reason.
+          git show "origin/$BASE:CLAUDE.md" > CLAUDE.md 2>/dev/null || rm -f CLAUDE.md
+          chmod +x .claude/hooks/guard-critical-paths.sh
+          # The decision script, which enforces the floor and the allowlist,
+          # comes from the base branch too, for the same reason the review
+          # publisher does. A base without it yet runs everything; the PR's
+          # own copy is never executed.
+          mkdir -p base-scripts
+          if git show "origin/$BASE:.github/scripts/decide-ui-tests.sh" > base-scripts/decide-ui-tests.sh 2>/dev/null; then
+            chmod +x base-scripts/decide-ui-tests.sh
+          else
+            rm -f base-scripts/decide-ui-tests.sh
+            echo "base branch has no decide-ui-tests.sh; the full suite will run" >&2
+            exit 1
+          fi
+          # The selector and its schema come from the base branch, so they
+          # cannot name a UI test class this PR adds. A PR that adds or
+          # removes a UI test file therefore runs everything, decided here
+          # from the diff and not by the model.
+          if git diff --name-only --diff-filter=AD "origin/$BASE...HEAD" -- testExample/testExampleUITests | grep -q '\.swift$'; then
+            echo "this PR adds or removes UI test files; the full suite will run" >&2
+            exit 1
+          fi
+          # A class renamed inside an existing file is the same problem:
+          # any added or removed XCTestCase declaration line runs everything.
+          if git diff "origin/$BASE...HEAD" -- testExample/testExampleUITests | grep -qE '^[+-][^+-].*class[[:space:]]+[A-Za-z0-9_]+[[:space:]]*:[[:space:]]*XCTestCase'; then
+            echo "this PR adds, removes, or renames a UI test class; the full suite will run" >&2
+            exit 1
+          fi
+          schema_file=.claude/skills/select-ui-tests/selection.schema.json
+          test -f "$schema_file" || { echo "base branch has no selector skill; the full suite will run" >&2; exit 1; }
+          schema="$(jq -c . "$schema_file")"
+          echo "schema=$schema" >> "$GITHUB_OUTPUT"
+
+      # `continue-on-error` is what makes the fallback real: without it a
+      # failed or budget-capped selection fails this job, and a job that
+      # `needs` it is skipped, which is "run nothing", the one outcome the
+      # design forbids. With it, the decide step sees the failure and asks
+      # for the full suite. A skipped step counts as a failure there too.
+      - name: Ask which classes the diff needs
+        id: select
+        if: steps.harness.outcome == 'success'
+        continue-on-error: true
+        uses: anthropics/claude-code-action@cab360f6565aa35a51d6ce9e43f1f4287c0a32ea # v1.0.241
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_CI_KEY }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          prompt: "/select-ui-tests ${{ github.event.pull_request.number }}"
+          claude_args: >-
+            --json-schema '${{ steps.harness.outputs.schema }}'
+            --permission-mode dontAsk
+            --allowedTools "Read,Grep,Glob,Bash(gh pr diff:*),Bash(gh pr view:*)"
+            --max-turns 15
+            --max-budget-usd 1
+            --model claude-sonnet-5-5
+
+      - name: Ask which classes the diff needs (retry)
+        id: select_retry
+        if: steps.harness.outcome == 'success' && steps.select.outcome != 'success'
+        continue-on-error: true
+        uses: anthropics/claude-code-action@cab360f6565aa35a51d6ce9e43f1f4287c0a32ea # v1.0.241
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_CI_KEY }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          prompt: "/select-ui-tests ${{ github.event.pull_request.number }}"
+          claude_args: >-
+            --json-schema '${{ steps.harness.outputs.schema }}'
+            --permission-mode dontAsk
+            --allowedTools "Read,Grep,Glob,Bash(gh pr diff:*),Bash(gh pr view:*)"
+            --max-turns 15
+            --max-budget-usd 1
+            --model claude-sonnet-5-5
+
+      # The selection JSON is model-authored, so it arrives through an
+      # environment variable, never interpolated into the script.
+      - name: Decide what runs
+        id: decide
+        if: ${{ !cancelled() }}
+        env:
+          SELECTION: ${{ steps.select_retry.outputs.structured_output || steps.select.outputs.structured_output }}
+          CONCLUSION: ${{ (steps.select.outcome == 'success' || steps.select_retry.outcome == 'success') && 'success' || 'failure' }}
+        run: |
+          printf '%s' "${SELECTION:-}" > selection.json
+          if [ -x base-scripts/decide-ui-tests.sh ]; then
+            base-scripts/decide-ui-tests.sh selection.json "$CONCLUSION" > decision.txt
+          else
+            # No base-branch decision script could be staged. Nothing from
+            # this PR runs in its place: the answer is simply everything.
+            printf 'run_all=true\nonly_testing=\nclasses=\nreason=base branch has no decision script; running the full suite\n' > decision.txt
+          fi
+          # Only the two keys the UI job consumes are exported, and only
+          # from their own lines; the model-authored reason stays in the
+          # step summary.
+          grep -E '^(run_all|only_testing)=' decision.txt >> "$GITHUB_OUTPUT"
+          {
+            echo "### UI test selection"
+            echo
+            sed -n 's/^reason=/**Reason:** /p; s/^run_all=/**Run everything:** /p' decision.txt
+            classes="$(sed -n 's/^classes=//p' decision.txt)"
+            if [ -n "$classes" ]; then
+              echo; echo "Classes:"; for c in $classes; do echo "- $c"; done
+              echo; echo "Why:"; jq -r '.reasons[]? | "- " + .' selection.json 2>/dev/null || true
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Keep the selection
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-test-selection-${{ github.event.pull_request.number }}-${{ github.run_attempt }}
+          path: |
+            selection.json
+            decision.txt
+          retention-days: 30
+          if-no-files-found: ignore
+
+  ui-tests:
+    name: UI tests (selected, English + German)
+    needs: select
+    # Runs even if the select job failed or was skipped. Empty outputs mean
+    # the full UI target, never nothing. A fork PR skips selection (no
+    # secrets) and therefore gets the full suite here; only drafts skip.
+    if: ${{ !cancelled() && github.event.pull_request.draft == false }}
+    runs-on: macos-26
+    timeout-minutes: 45
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.2.0.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@v4
+      - name: Show the available toolchains
+        run: |
+          ls -d /Applications/Xcode*.app
+          xcodebuild -version
+          xcrun swiftc --version
+      - name: Disconnect the simulator's hardware keyboard
+        run: defaults write com.apple.iphonesimulator ConnectHardwareKeyboard -bool false
+      - name: Test
+        working-directory: testExample
+        env:
+          RUN_ALL: ${{ needs.select.outputs.run_all }}
+          ONLY_TESTING: ${{ needs.select.outputs.only_testing }}
+        run: |
+          if [ "$RUN_ALL" = "false" ] && [ -n "$ONLY_TESTING" ]; then
+            scope="$ONLY_TESTING"
+          else
+            scope="-only-testing:testExampleUITests"
+          fi
+          echo "xcodebuild scope: $scope"
+          # shellcheck disable=SC2086
+          xcodebuild test \
+            -project testExample.xcodeproj \
+            -scheme testExample \
+            -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \
+            -resultBundlePath UITests.xcresult \
+            $scope
+      - name: Archive the result bundle
+        if: always()
+        run: tar -czf UITests.xcresult.tgz -C testExample UITests.xcresult
+      - name: Upload the result bundle
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr-ui-tests-xcresult-${{ github.run_attempt }}
+          path: UITests.xcresult.tgz
+          retention-days: 7
