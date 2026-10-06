@@ -36,8 +36,12 @@ struct FavoritesView: View {
             // animate the final row away while the overlay fades in.
             List {
                 ForEach(favorites) { favorite in
-                    NavigationLink(value: favorite.asRepo) {
-                        RepoRowView(repo: favorite.asRepo)
+                    // One conversion per row: `asRepo` builds a value type
+                    // from the stored model, and the link's value and the
+                    // row's content should be the same instance of it.
+                    let repo = favorite.asRepo
+                    NavigationLink(value: repo) {
+                        RepoRowView(repo: repo)
                     }
                     .accessibilityIdentifier("favorites.row.\(favorite.fullName)")
                 }
