@@ -76,6 +76,9 @@ jobs:
           rm -rf pr-harness && cp -R .claude pr-harness
           rm -rf .claude
           git checkout "origin/$BASE" -- .claude
+          # CLAUDE.md is loaded as project instructions, so it is part of the
+          # harness and comes from the base branch for the same reason.
+          git show "origin/$BASE:CLAUDE.md" > CLAUDE.md 2>/dev/null || rm -f CLAUDE.md
           chmod +x .claude/hooks/guard-critical-paths.sh
           schema_file=.claude/skills/review-pr/verdict.schema.json
           test -f "$schema_file" || { echo "base branch has no review skill; the review cannot run" >&2; exit 1; }

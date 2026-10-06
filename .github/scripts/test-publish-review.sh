@@ -34,6 +34,7 @@ if [ "$1" = "pr" ] && [ "$2" = "edit" ]; then
 fi
 if [ "$1" = "api" ] && [ "$2" = "user" ]; then echo "github-actions[bot]"; exit 0; fi
 if [ "$1" = "api" ] && [ "$2" = "--method" ] && [ "$3" = "PUT" ] && [[ "$4" == */dismissals ]]; then
+  if [ "${DISMISS_FAIL:-0}" = "1" ]; then echo "gh: Forbidden (HTTP 403)" >&2; exit 1; fi
   echo "dismiss ${4##*/reviews/}" | sed 's|/dismissals||' >> "$STUB_LOG"; exit 0
 fi
 if [ "$1" = "api" ] && [[ "$2" == */reviews ]]; then
@@ -69,5 +70,6 @@ check "prior approval kept on pass"          "exit=0 APPROVE comments=0"        
 check "prior approval dismissed on changes"  "exit=0 dismiss 77 REQUEST_CHANGES comments=1"      "$(PRIOR_APPROVAL=1 run success "$tmp/cr.json")"
 check "prior approval dismissed on needs human" "exit=0 dismiss 77 COMMENT comments=0 label needs-human-review" "$(PRIOR_APPROVAL=1 run success "$tmp/nh.json")"
 check "prior approval dismissed on did not run" "exit=1 dismiss 77 COMMENT comments=0"           "$(PRIOR_APPROVAL=1 run failure "$tmp/pass.json")"
+check "dismissal failure is red"             "exit=1"                                            "$(PRIOR_APPROVAL=1 DISMISS_FAIL=1 run success "$tmp/nh.json")"
 
 exit $fail

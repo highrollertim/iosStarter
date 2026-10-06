@@ -19,6 +19,12 @@ on:
     branches: [main]
   pull_request:
 
+# Least privilege for every job here, including the one that runs
+# PR-authored shell in the fixture tests. Nothing in this workflow writes
+# to the repository or to pull requests.
+permissions:
+  contents: read
+
 # One live run per pull request. A new push supersedes the run in flight,
 # which otherwise keeps macOS jobs busy producing a result nobody will read.
 # That matters more than it sounds: hosted macOS allows five concurrent jobs,

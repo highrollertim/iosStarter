@@ -52,7 +52,14 @@ dismiss_prior_approvals() { # $1 reason
   me="$(gh api user --jq .login 2>/dev/null || echo "github-actions[bot]")"
   ids="$(gh api "$api" --paginate --jq ".[] | select(.state == \"APPROVED\" and .user.login == \"$me\") | .id" 2>/dev/null || true)"
   for id in $ids; do
-    gh api --method PUT "$api/$id/dismissals" -f message="$1" >/dev/null 2>&1 && echo "Dismissed prior approval $id: $1" || echo "warning: could not dismiss prior approval $id" >&2
+    if gh api --method PUT "$api/$id/dismissals" -f message="$1" >/dev/null 2>&1; then
+      echo "Dismissed prior approval $id: $1"
+    else
+      # A standing approval that cannot be dismissed must not be left to
+      # satisfy the branch rule under a non-pass verdict. Fail loudly.
+      echo "could not dismiss prior approval $id; failing so the stale approval is noticed" >&2
+      exit 1
+    fi
   done
 }
 
