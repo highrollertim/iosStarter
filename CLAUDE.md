@@ -45,7 +45,7 @@ xcodebuild build -project testExample.xcodeproj -scheme testExample -destination
 # unit tests (both languages, a couple of minutes)
 xcodebuild test -project testExample.xcodeproj -scheme testExample -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -only-testing:testExampleTests
 
-# UI tests (both languages, roughly twelve minutes)
+# UI tests (both languages, roughly four minutes; the full run is about six)
 xcodebuild test -project testExample.xcodeproj -scheme testExample -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -only-testing:testExampleUITests
 
 # formatter, advisory, from the repo root

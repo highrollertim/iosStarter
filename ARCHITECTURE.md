@@ -679,15 +679,15 @@ number, which then mostly measures how much test code there is. A coverage
 figure that flatters itself is worse than none. Read it with
 `xcrun xccov view --report --only-targets <result-bundle>`.
 
-**A CI workflow for a remote this repo does not have yet.**
-`.github/workflows/ci.yml` runs the unit suite and the UI suite as two jobs on
-`macos-26`, each through the shared scheme — which means each through the test
-plan, in both languages — plus a third, advisory formatter job. There is no
-`git remote` configured, so nothing has ever executed it; the header comment
-says so. It is committed anyway because the alternative is that the commands
-get reinvented, differently, by whoever first wires up a remote. Two of its
-steps are worth knowing about. The software keyboard never appears while the
-simulator is paired with a hardware one, and `SearchScreen.search(for:)` waits
+**A CI workflow.** `.github/workflows/ci.yml` runs the unit suite and the UI
+suite as two jobs on `macos-26`, each through the shared scheme — which means
+each through the test plan, in both languages — plus a third, advisory
+formatter job. It was written before the repository had a remote so the
+commands would not get reinvented, differently, by whoever first wired one up;
+it has run on hosted macOS since, and its timeout and concurrency comments
+reason from what those runs showed. Two of its steps are worth knowing about.
+The software keyboard never appears while the simulator is paired with a
+hardware one, and `SearchScreen.search(for:)` waits
 on it, so the UI job turns the pairing off. And that job writes a result
 bundle and uploads it with `if: always()`: a UI failure on a hosted runner is
 otherwise a log line, with the screenshots and accessibility snapshots left

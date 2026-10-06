@@ -98,9 +98,11 @@ configurations: English (`en`/`US`) and German (`de`/`DE`). So a plain
 `xcodebuild test` runs both languages, and the German pass is the app's
 localization check rather than something a maintainer has to remember. Budget
 roughly twice the wall-clock time you would expect: a full run lands around
-twelve minutes, nearly all of it the UI suite, and the unit suite on its own
-is a couple of minutes. (The guide's §2 and `ci.yml`'s timeout comment quote
-the same hedged figure; if one moves, move all three.)
+six minutes, most of it the UI suite, and the unit suite on its own is a
+couple of minutes. (The guide's §2, `ci.yml`'s timeout comment and
+`CLAUDE.md`'s command block quote the same hedged figure; if one moves, move
+all four. It was twelve before `LaunchTests` stopped repeating across the
+appearance-and-orientation matrix.)
 
 Some UI tests skip themselves under German, report the reason, and are
 expected rather than a failure. Six match strings **Apple** owns and
@@ -157,10 +159,10 @@ There is a GitHub Actions workflow at `.github/workflows/ci.yml` with three
 jobs on a macOS 26 runner: the unit suite, the UI suite (which writes a result
 bundle and uploads it as an artifact even when the run passes, because a UI
 failure on a runner is otherwise a log line with the screenshots left behind
-on a machine that no longer exists), and an advisory formatter pass. Nothing
-has ever executed it — this repository has no remote — but the two test
-commands are the ones above, committed so the first push to a remote inherits
-them.
+on a machine that no longer exists), and an advisory formatter pass. It was
+committed before the repository had a remote so the two test commands above
+would not get reinvented; it has run on hosted macOS since, and its timeout
+and concurrency comments reason from what those runs showed.
 
 A `.swift-format` at the repository root records the house style (four-space
 indentation, 120 columns) for `swift-format`, which ships with the toolchain.

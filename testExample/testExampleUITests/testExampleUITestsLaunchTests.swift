@@ -1,7 +1,8 @@
 import XCTest
 
-/// Smoke test: the app launches at all, on every UI-appearance configuration
-/// the suite runs under, and we keep a screenshot in the result bundle.
+/// Smoke test: the app launches at all, once per test-plan language, and we
+/// keep a screenshot in the result bundle. The appearance-and-orientation
+/// matrix described below is opt-in.
 ///
 /// Two independent multipliers apply here, and they are worth telling apart —
 /// the result bundle is confusing until you do.
@@ -29,10 +30,43 @@ import XCTest
 /// the German pass a localization check rather than a metadata permutation.
 /// So these screenshots span both, and this class is the app's launch smoke
 /// test and its most direct German one at the same time.
+///
+/// The matrix is **off by default**, and the reason is measured rather than
+/// assumed, in the same units as above: eight configurations per language,
+/// so sixteen across the plan's two configurations. The override is
+/// class-level, so it multiplied both tests here: sixteen launch-and-
+/// terminate cycles of `testLaunch`, and sixteen runs of
+/// `testLaunchPerformance`, each of which is `measure`'s five iterations
+/// plus a warm-up, so roughly a hundred further launches. With it on, this
+/// class was thirteen minutes of a thirty-two-minute UI job on a hosted
+/// macOS runner, and the one test that failed there: `app.launch()` first
+/// terminates the previous instance, a loaded shared simulator took longer
+/// than XCTest's sixty-second allowance to do it, and one of the eight
+/// English `testLaunch` configurations reported "Failed to terminate" while
+/// the other seven and the whole German pass were green. A smoke test that
+/// is the most expensive and the least reliable test in the suite is the
+/// wrong shape for a gate.
+///
+/// What the matrix proved is still proved: the app launches in both
+/// languages because the test plan runs this class twice, and the
+/// appearance and orientation screenshots are a nice-to-have the result
+/// bundle can carry when someone asks for them. The switch is an environment
+/// variable rather than an edit to this file, so turning the gallery on for
+/// one local run cannot be committed by accident:
+///
+///     TEST_RUNNER_UI_CONFIG_MATRIX=1 xcodebuild test ... -only-testing:testExampleUITests/LaunchTests
+///
+/// (`xcodebuild` forwards `TEST_RUNNER_`-prefixed variables to the test
+/// runner with the prefix stripped; the Xcode scheme editor's test
+/// environment does the same without the prefix.)
 final class LaunchTests: XCTestCase {
 
     override class var runsForEachTargetApplicationUIConfiguration: Bool {
-        true
+        // Both spellings, so the unprefixed form set in a scheme's test
+        // environment works as well as the `TEST_RUNNER_` form `xcodebuild`
+        // forwards, and neither is a silent no-op.
+        let environment = ProcessInfo.processInfo.environment
+        return environment["UI_CONFIG_MATRIX"] == "1" || environment["TEST_RUNNER_UI_CONFIG_MATRIX"] == "1"
     }
 
     override func setUpWithError() throws {
