@@ -22,11 +22,11 @@ print(ti.get("file_path") or ti.get("path") or "")')"
 [ -z "$path" ] && exit 0
 
 case "$path" in
-  *.github/workflows/*|*project.pbxproj|*PrivacyInfo.xcprivacy|*.xctestplan|*.claude/settings.json|*.claude/hooks/*)
+  *.github/workflows/*|*.github/scripts/*|*project.pbxproj|*PrivacyInfo.xcprivacy|*.xctestplan|*.claude/settings.json|*.claude/hooks/*)
     if [ "${HARNESS_ALLOW_CRITICAL:-}" = "1" ]; then
       exit 0
     fi
-    echo "Blocked by the harness: '$path' is a critical path (CI workflow, Xcode project file, privacy manifest, test plan, or harness config). Change it by hand in a PR tagged risk:critical, or rerun with HARNESS_ALLOW_CRITICAL=1 if this session is deliberately doing that work." >&2
+    echo "Blocked by the harness: '$path' is a critical path (CI workflow or script, Xcode project file, privacy manifest, test plan, or harness config). Change it by hand in a PR tagged risk:critical, or rerun with HARNESS_ALLOW_CRITICAL=1 if this session is deliberately doing that work." >&2
     exit 2
     ;;
 esac

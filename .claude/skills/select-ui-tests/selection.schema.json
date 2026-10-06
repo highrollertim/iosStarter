@@ -1,0 +1,18 @@
+{
+  "title": "UI test selection",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["run_all", "classes", "reasons", "summary"],
+  "properties": {
+    "run_all": { "type": "boolean" },
+    "classes": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": ["SearchFlowUITests", "FavoritesFlowUITests", "AccessibilityAuditUITests", "ScreenshotGalleryUITests", "LaunchTests"]
+      }
+    },
+    "reasons": { "type": "array", "items": { "type": "string" } },
+    "summary": { "type": "string" }
+  }
+}

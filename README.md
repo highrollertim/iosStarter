@@ -162,7 +162,12 @@ failure on a runner is otherwise a log line with the screenshots left behind
 on a machine that no longer exists), and an advisory formatter pass. It was
 committed before the repository had a remote so the two test commands above
 would not get reinvented; it has run on hosted macOS since, and its timeout
-and concurrency comments reason from what those runs showed.
+and concurrency comments reason from what those runs showed. The full UI
+suite runs there on every merge to `main`. On a pull request, two more
+workflows run instead: `pr-review.yml` has Claude Code review the diff and
+submit a real pull request review, and `pr-ui-tests.yml` has it pick which
+UI test classes the diff touches, with `LaunchTests` always included and the
+whole suite as the fallback when it cannot decide.
 
 A `.swift-format` at the repository root records the house style (four-space
 indentation, 120 columns) for `swift-format`, which ships with the toolchain.
