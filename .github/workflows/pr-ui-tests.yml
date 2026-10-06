@@ -124,14 +124,33 @@ jobs:
             --max-budget-usd 1
             --model claude-opus-5
 
+      - name: Ask which classes the diff needs (retry)
+        id: select_retry
+        if: steps.harness.outcome == 'success' && steps.select.outcome != 'success'
+        continue-on-error: true
+        uses: anthropics/claude-code-action@cab360f6565aa35a51d6ce9e43f1f4287c0a32ea # v1.0.241
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_CI_KEY }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          prompt: "/select-ui-tests ${{ github.event.pull_request.number }}"
+          claude_args: >-
+            --json-schema '${{ steps.harness.outputs.schema }}'
+            --permission-mode dontAsk
+            --allowedTools "Read,Grep,Glob,Bash(gh pr diff:*),Bash(gh pr view:*)"
+            --max-turns 15
+            --max-budget-usd 1
+            --model claude-opus-5
+
       # The selection JSON is model-authored, so it arrives through an
       # environment variable, never interpolated into the script.
       - name: Decide what runs
         id: decide
         if: ${{ !cancelled() }}
         env:
-          SELECTION: ${{ steps.select.outputs.structured_output }}
-          CONCLUSION: ${{ steps.select.outcome }}
+          SELECTION: ${{ steps.select_retry.outputs.structured_output || steps.select.outputs.structured_output }}
+          CONCLUSION: ${{ (steps.select.outcome == 'success' || steps.select_retry.outcome == 'success') && 'success' || 'failure' }}
         run: |
           printf '%s' "${SELECTION:-}" > selection.json
           if [ -x base-scripts/decide-ui-tests.sh ]; then
